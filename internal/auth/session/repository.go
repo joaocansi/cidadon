@@ -1,7 +1,8 @@
 package session
 
 import (
-	"cidadon/internal/app/shared/database"
+	"cidadon/internal/app/database"
+	apperrors "cidadon/internal/app/errors"
 	"context"
 	"errors"
 
@@ -26,9 +27,9 @@ func (r *RepositoryImpl) FindByRefreshTokenHash(ctx context.Context, hash string
 	err := r.GetDB(ctx).Where("refresh_token_hash = ?", hash).First(&session).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return Session{}, database.ErrDBNotFound
+			return Session{}, apperrors.ErrDBNotFound
 		}
-		return Session{}, database.ErrDBInternal
+		return Session{}, apperrors.ErrDBInternal
 	}
 	return session.ToDomain(), nil
 }
@@ -36,7 +37,7 @@ func (r *RepositoryImpl) FindByRefreshTokenHash(ctx context.Context, hash string
 func (r *RepositoryImpl) Create(ctx context.Context, session Session) error {
 	err := r.GetDB(ctx).Create(&session).Error
 	if err != nil {
-		return database.ErrDBInternal
+		return apperrors.ErrDBInternal
 	}
 	return nil
 }

@@ -1,4 +1,4 @@
-package region
+package address
 
 import (
 	"context"
@@ -7,6 +7,10 @@ import (
 	"net/http"
 	"net/url"
 )
+
+type Enricher interface {
+	Enrich(ctx context.Context, address *Address) error
+}
 
 type NominatimEnricher struct {
 	Client *http.Client
@@ -27,11 +31,11 @@ type Response struct {
 		Suburb      string `json:"suburb"`
 		City        string `json:"city"`
 		State       string `json:"state"`
-		Region      string `json:"region"`
+		Region      string `json:"address"`
 		Postcode    string `json:"postcode"`
 		Country     string `json:"country"`
 		CountryCode string `json:"country_code"`
-	} `json:"region"`
+	} `json:"address"`
 }
 
 func (ae *NominatimEnricher) Enrich(ctx context.Context, address *Address) error {
@@ -64,12 +68,12 @@ func (ae *NominatimEnricher) Enrich(ctx context.Context, address *Address) error
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("region enrichment returned status %d", resp.StatusCode)
+		return fmt.Errorf("address enrichment returned status %d", resp.StatusCode)
 	}
 
 	var response Response
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return fmt.Errorf("decode region response: %w", err)
+		return fmt.Errorf("decode address response: %w", err)
 	}
 
 	address.City = response.Address.City

@@ -1,4 +1,4 @@
-package security
+package providers
 
 import (
 	"crypto/rsa"
@@ -7,6 +7,17 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+type Jwt struct {
+	Token     string
+	ExpiresAt time.Time
+}
+
+type JwtProvider interface {
+	Generate(sub string) (*Jwt, error)
+	Verify(tokenString string) (*jwt.Token, error)
+	GetSubject(tokenString string) (string, error)
+}
 
 type JwtProviderImpl struct {
 	publicKey      *rsa.PublicKey

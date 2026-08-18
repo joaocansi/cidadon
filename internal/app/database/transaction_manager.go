@@ -6,6 +6,12 @@ import (
 	"gorm.io/gorm"
 )
 
+type dbContextKey struct{}
+
+type TransactionManager interface {
+	WithTransaction(ctx context.Context, fc func(ctx context.Context) error) error
+}
+
 type TransactionManagerImpl struct {
 	db *gorm.DB
 }

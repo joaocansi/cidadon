@@ -1,7 +1,6 @@
-package settings
+package environment
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -41,10 +40,8 @@ func Load() error {
 	if err := godotenv.Load(); err != nil {
 		return err
 	}
-
 	if err := envconfig.InitWithOptions(&Env, envconfig.Options{AllOptional: false}); err != nil {
 		return err
 	}
-	fmt.Println(Env)
 	return nil
 }

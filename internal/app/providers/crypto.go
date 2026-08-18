@@ -1,8 +1,13 @@
-package security
+package providers
 
 import (
 	"golang.org/x/crypto/bcrypt"
 )
+
+type CryptoProvider interface {
+	Hash(password string) string
+	Compare(password, hash string) bool
+}
 
 type CryptoProviderImpl struct {
 	cost int

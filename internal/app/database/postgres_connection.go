@@ -1,14 +1,14 @@
 package database
 
 import (
-	"cidadon/internal/app/shared/settings"
+	"cidadon/internal/app/environment"
 	"fmt"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
-func NewPostgresConnection(cfg settings.Database) (*gorm.DB, error) {
+func NewPostgresConnection(cfg environment.Database) (*gorm.DB, error) {
 	dsn := fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		cfg.Host,

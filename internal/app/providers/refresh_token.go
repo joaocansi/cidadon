@@ -1,4 +1,4 @@
-package security
+package providers
 
 import (
 	"crypto/rand"
@@ -7,6 +7,18 @@ import (
 	"encoding/base64"
 	"time"
 )
+
+type RefreshToken struct {
+	Value     string
+	ExpiresAt time.Time
+	Hash      string
+}
+
+type RefreshTokenProvider interface {
+	Generate() (*RefreshToken, error)
+	Hash(token string) string
+	Compare(token, hash string) bool
+}
 
 type RefreshTokenProviderImpl struct {
 	expirationTime time.Duration

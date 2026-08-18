@@ -55,3 +55,10 @@ func (ah *Handler) Register(c *gin.Context) {
 
 	c.Status(http.StatusCreated)
 }
+
+//func (ah *Handler) Profile(c *gin.Context) {
+//	userID, ok := c.Get("userID")
+//	if !ok {
+//
+//	}
+//}
