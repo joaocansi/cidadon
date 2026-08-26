@@ -6,37 +6,47 @@ import (
 	"cidadon/internal/infrastructure/database"
 	"cidadon/internal/model"
 	"context"
+	"errors"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
-type OfficeMemberRepositoryImpl struct {
+type OfficeMemberRequestRepositoryImpl struct {
 	*database.BaseRepository
 	Logger *zap.SugaredLogger
 }
 
-func NewOfficeMemberRepository(baseRepository *database.BaseRepository, logger *zap.SugaredLogger) *OfficeMemberRepositoryImpl {
-	return &OfficeMemberRepositoryImpl{
+func NewOfficeMemberRequestRepository(baseRepository *database.BaseRepository, logger *zap.SugaredLogger) *OfficeMemberRequestRepositoryImpl {
+	return &OfficeMemberRequestRepositoryImpl{
 		BaseRepository: baseRepository,
-		Logger:         logger.Named("OfficeMemberRepository"),
+		Logger:         logger.Named("OfficeMemberRequestRepository"),
 	}
 }
 
-func (om *OfficeMemberRepositoryImpl) Create(ctx context.Context, officeMember repository.CreateOfficeMemberData) (*entity.OfficeMember, error) {
-	officeMemberModel := model.OfficeMember{
-		OfficeID: officeMember.OfficeID,
-		User: &model.User{
-			Name:     officeMember.Name,
-			Email:    officeMember.Email,
-			Password: officeMember.Password,
-			Role:     string(entity.OfficeMemberUser),
-		},
-		ImageURL: officeMember.ImageURL,
+func (om *OfficeMemberRequestRepositoryImpl) Create(ctx context.Context, officeMemberRequest repository.CreateOfficeMemberRequestData) (*entity.OfficeMemberRequest, error) {
+	officeMemberRequestModel := model.OfficeMemberRequest{
+		OfficeID: officeMemberRequest.OfficeID,
+		Email:    officeMemberRequest.Email,
+		Token:    officeMemberRequest.Token,
 	}
-	err := om.GetDB(ctx).Create(&officeMemberModel).Error
+	err := om.GetDB(ctx).Create(&officeMemberRequestModel).Error
 	if err != nil {
-		om.Logger.Warnw("failed to create office member", "error", err)
+		om.Logger.Warnw("failed to create office member request", "error", err)
 		return nil, repository.ErrDBInternal
 	}
-	return officeMemberModel.ToDomain(), nil
+	return officeMemberRequestModel.ToDomain(), nil
+}
+
+func (om *OfficeMemberRequestRepositoryImpl) FindByToken(ctx context.Context, token string) (*entity.OfficeMemberRequest, error) {
+	var officeMemberRequest model.OfficeMemberRequest
+	err := om.GetDB(ctx).Where("token = ?", token).First(&officeMemberRequest).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, repository.ErrDBNotFound
+		}
+		om.Logger.Warnw("failed to find office member request", "error", err)
+		return nil, repository.ErrDBInternal
+	}
+	return officeMemberRequest.ToDomain(), nil
 }
