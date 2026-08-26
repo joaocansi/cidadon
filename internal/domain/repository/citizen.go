@@ -1,8 +1,8 @@
 package repository
 
 import (
+	"cidadon/internal/domain/entity"
 	"context"
-	"time"
 )
 
 type CreateCitizenData struct {
@@ -11,15 +11,6 @@ type CreateCitizenData struct {
 	Password string
 }
 
-type CreateCitizenResult struct {
-	ID        string
-	Name      string
-	Email     string
-	Password  string
-	CreatedAt time.Time
-	UpdatedAt time.Time
-}
-
 type CitizenRepository interface {
-	Create(ctx context.Context, citizen CreateCitizenData) (CreateCitizenResult, error)
+	Create(ctx context.Context, citizen CreateCitizenData) (*entity.Citizen, error)
 }

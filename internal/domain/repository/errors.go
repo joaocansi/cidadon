@@ -1,7 +1,7 @@
 package repository
 
 import (
-	"cidadon/internal/errors"
+	"cidadon/internal/domain/service"
 	stderrors "errors"
 )
 
@@ -11,24 +11,22 @@ var (
 	ErrDBInternal = stderrors.New("internal error")
 )
 
-var classification = map[error]errors.Code{
-	ErrDBNotFound: errors.CodeNotFound,
-	ErrDBConflict: errors.CodeConflict,
-	ErrDBInternal: errors.CodeInternal,
-}
-
-func ClassifyCode(err error) errors.Code {
-	for sentinel, code := range classification {
-		if stderrors.Is(err, sentinel) {
-			return code
-		}
+func ClassifyCode(err error) service.Code {
+	switch {
+	case stderrors.Is(err, ErrDBNotFound):
+		return service.CodeNotFound
+	case stderrors.Is(err, ErrDBConflict):
+		return service.CodeConflict
+	case stderrors.Is(err, ErrDBInternal):
+		return service.CodeInternal
+	default:
+		return service.CodeInternal
 	}
-	return errors.CodeInternal
 }
 
-func WrapDB(err error, message string) *errors.Error {
+func WrapDB(err error, message string) *service.Error {
 	if err == nil {
 		return nil
 	}
-	return errors.Wrap(err, ClassifyCode(err), message)
+	return service.Wrap(err, ClassifyCode(err), message)
 }

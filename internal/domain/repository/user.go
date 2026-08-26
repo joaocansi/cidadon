@@ -5,7 +5,14 @@ import (
 	"context"
 )
 
+type CreateUserData struct {
+	Name     string
+	Email    string
+	Password string
+	Role     string
+}
+
 type UserRepository interface {
 	FindByEmail(ctx context.Context, email string) (*entity.User, error)
-	Create(ctx context.Context, user *entity.User) error
+	Create(ctx context.Context, user CreateUserData) (*entity.User, error)
 }
