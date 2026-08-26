@@ -1,4 +1,4 @@
-package domain
+package entity
 
 import (
 	"time"
@@ -12,4 +12,6 @@ type Councillor struct {
 	UserID    uint      `json:"user_id"`
 	Party     string    `json:"party"`
 	ImageURL  string    `json:"image_url"`
+	State     string    `json:"state"`
+	City      string    `json:"city"`
 }

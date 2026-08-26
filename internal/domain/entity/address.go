@@ -1,4 +1,4 @@
-package domain
+package entity
 
 type Address struct {
 	City         string  `json:"city"`
