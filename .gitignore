@@ -1,1 +1,65 @@
-keys/*-private.pem
+# Go binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Build output
+bin/
+build/
+dist/
+
+# Air
+tmp/
+.air/
+
+# Go coverage / profiling
+coverage.out
+coverage.html
+*.prof
+
+# Test artifacts
+testdata/tmp/
+testdata/output/
+
+# Go workspace
+go.work
+go.work.sum
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Private keys / certificates
+keys/
+*-private.pem
+*.key
+*.p12
+*.pfx
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Generated files
+generated/
