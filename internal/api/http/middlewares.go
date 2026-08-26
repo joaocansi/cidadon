@@ -1,8 +1,7 @@
 package http
 
 import (
-	"cidadon/internal/auth"
-	apperrors "cidadon/internal/handler"
+	"cidadon/internal/domain/entity"
 	"cidadon/internal/provider"
 	"net/http"
 
@@ -17,7 +16,7 @@ func ErrorHandler() gin.HandlerFunc {
 			return
 		}
 
-		status, resp := apperrors.FromError(c.Errors.Last().Err)
+		status, resp := FromError(c.Errors.Last().Err)
 		c.JSON(status, resp)
 	}
 }
@@ -32,7 +31,7 @@ func NewAuthMiddleware(JwtProvider provider.JwtProvider) *AuthMiddleware {
 	}
 }
 
-func (a *AuthMiddleware) AuthHandler() gin.HandlerFunc {
+func (a *AuthMiddleware) AuthHandler(allowedRoles ...entity.UserRole) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		accessToken, err := c.Request.Cookie("accessToken")
 		if err != nil {
@@ -46,14 +45,23 @@ func (a *AuthMiddleware) AuthHandler() gin.HandlerFunc {
 			return
 		}
 
-		subjectAuth, err := auth.GetSubjectAuth(subject)
+		subjectAuth := entity.AuthSubject{}
+		err = subjectAuth.FromString(subject)
+
 		if err != nil {
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
-		c.Set("userId", subjectAuth.UserID)
-		c.Set("userRole", subjectAuth.Role)
-		c.Next()
+		for _, role := range allowedRoles {
+			if subjectAuth.Role == role {
+				c.Set("userId", subjectAuth.UserID)
+				c.Set("userRole", subjectAuth.Role)
+				c.Next()
+			}
+		}
+
+		c.AbortWithStatus(http.StatusForbidden)
+		return
 	}
 }

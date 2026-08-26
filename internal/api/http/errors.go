@@ -1,4 +1,4 @@
-package errors
+package http
 
 import (
 	"cidadon/internal/domain/service"
