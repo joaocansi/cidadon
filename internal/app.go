@@ -1,11 +1,11 @@
-package api
+package internal
 
 import (
-	"cidadon/internal/app/database"
-	"cidadon/internal/app/http"
-	"cidadon/internal/app/utils"
+	"cidadon/internal/api/http"
+	"cidadon/internal/domain/entity"
 	"cidadon/internal/environment"
 	"cidadon/internal/handler"
+	"cidadon/internal/infrastructure/database"
 	"cidadon/internal/model"
 	"cidadon/internal/provider"
 	"cidadon/internal/repository"
@@ -24,8 +24,8 @@ func migrate(db *gorm.DB) error {
 		&model.Citizen{},
 		&model.Councillor{},
 		&model.Office{},
-		&model.OfficeContact{},
-		&model.OfficeSocialNetwork{})
+		&model.OfficeMember{},
+		&model.OfficeMemberRequest{})
 }
 
 func Run() error {
@@ -37,7 +37,7 @@ func Run() error {
 	defer zapLogger.Sync()
 	logger := zapLogger.Sugar()
 
-	rsa256Pair, err := utils.LoadRSAKeys(environment.Env.JwtProvider.PrivateKey, environment.Env.JwtProvider.PublicKey)
+	rsa256Pair, err := environment.LoadRsaKeys(environment.Env.JwtProvider.PrivateKey, environment.Env.JwtProvider.PublicKey)
 	if err != nil {
 		return err
 	}
@@ -51,7 +51,7 @@ func Run() error {
 		return err
 	}
 
-	refreshTokenProvider := provider.NewRefreshTokenProvider(environment.Env.RefreshTokenProvider.Expiration)
+	hashProvider := provider.NewHashProvider()
 	cryptoProvider := provider.NewCryptoProvider()
 	jwtProvider := provider.NewJwtProvider(
 		rsa256Pair.PublicKey,
@@ -69,10 +69,16 @@ func Run() error {
 	citizenRepository := repository.NewCitizenRepository(baseRepository, logger)
 	userRepository := repository.NewUserRepository(baseRepository, logger)
 	sessionRepository := repository.NewSessionRepository(baseRepository, logger)
+	officeRepository := repository.NewOfficeRepository(baseRepository, logger)
+	officeMemberRepository := repository.NewOfficeMemberRepository(baseRepository, logger)
+	officeMemberRequestRepository := repository.NewOfficeMemberRequestRepository(baseRepository, logger)
 	transactionManager := database.NewTransactionManager(db)
 
-	authService := service.NewAuthService(userRepository, sessionRepository, citizenRepository, councillorRepository, transactionManager, jwtProvider, refreshTokenProvider, cryptoProvider, nominatimAddressEnricher, logger)
+	authService := service.NewAuthService(userRepository, sessionRepository, citizenRepository, councillorRepository, officeMemberRepository, officeMemberRequestRepository, transactionManager, jwtProvider, hashProvider, cryptoProvider, nominatimAddressEnricher, logger)
 	authHandler := handler.NewAuthHandler(authService)
+
+	officeService := service.NewOfficeService(officeRepository, officeMemberRepository, officeMemberRequestRepository, hashProvider, logger)
+	officeHandler := handler.NewOfficeHandler(officeService)
 
 	router := gin.New()
 	router.Use(http.ErrorHandler())
@@ -80,8 +86,25 @@ func Run() error {
 	authRouter := router.Group("/auth")
 	{
 		authRouter.POST("/login", authHandler.Login)
-		authRouter.POST("/register", authHandler.Register)
-		authRouter.GET("/profile", authMiddleware.AuthHandler(), authHandler.Profile)
+		authRouter.POST("/register/citizen", authHandler.RegisterCitizen)
+		authRouter.POST("/register/councillor", authHandler.RegisterCouncillor)
+		authRouter.POST("/register/office-member", authHandler.RegisterOfficeMember)
+	}
+
+	officeRouter := router.Group("/office")
+	{
+		onlyCouncillor := officeRouter.Group("/")
+		onlyCouncillor.Use(authMiddleware.AuthHandler(entity.CouncillorUser))
+		{
+			onlyCouncillor.POST("/", officeHandler.Create)
+			onlyCouncillor.POST("/member-request", officeHandler.NewMemberRequest)
+		}
+
+		councillorOrMember := officeRouter.Group("/")
+		councillorOrMember.Use(authMiddleware.AuthHandler(entity.CouncillorUser, entity.OfficeMemberUser))
+		{
+			councillorOrMember.PUT("/", officeHandler.Update)
+		}
 	}
 
 	if err := netHttp.ListenAndServe(":8080", router); err != nil {
