@@ -1,11 +1,11 @@
 package main
 
 import (
-	"cidadon/internal/app"
+	"cidadon/internal"
 )
 
 func main() {
-	if err := app.Run(); err != nil {
+	if err := internal.Run(); err != nil {
 		panic(err)
 	}
 }
