@@ -9,10 +9,10 @@ import (
 
 type Office struct {
 	gorm.Model
-	CouncillorID   uint
-	Councillor     *Councillor
-	Contacts       json.RawMessage `database:"type:jsonb"`
-	SocialNetworks json.RawMessage `database:"type:jsonb"`
+	CouncillorID   uint            `gorm:"uniqueIndex;not null"`
+	Councillor     *Councillor     `gorm:"foreignKey:CouncillorID;references:UserID"`
+	Contacts       json.RawMessage `gorm:"type:jsonb"`
+	SocialNetworks json.RawMessage `gorm:"type:jsonb"`
 }
 
 func (o *Office) ToDomain() *entity.Office {
@@ -27,6 +27,7 @@ func (o *Office) ToDomain() *entity.Office {
 	_ = json.Unmarshal(o.Contacts, &Contacts)
 
 	return &entity.Office{
+		ID:             o.ID,
 		CouncillorID:   o.CouncillorID,
 		Councillor:     o.Councillor.ToDomain(),
 		Contacts:       Contacts,

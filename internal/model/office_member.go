@@ -7,11 +7,10 @@ import (
 )
 
 type OfficeMember struct {
-	gorm.Model
-	OfficeID uint
-	Office   *Office
-	UserID   uint
-	User     *User
+	UserID   uint    `gorm:"primaryKey"`
+	User     *User   `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
+	OfficeID uint    `gorm:"not null;index"`
+	Office   *Office `gorm:"foreignKey:OfficeID;constraint:OnDelete:CASCADE"`
 	ImageURL string
 }
 
@@ -21,23 +20,20 @@ func (om *OfficeMember) ToDomain() *entity.OfficeMember {
 	}
 
 	return &entity.OfficeMember{
-		ID:        om.ID,
-		OfficeID:  om.OfficeID,
-		Office:    om.Office.ToDomain(),
-		UserID:    om.UserID,
-		User:      om.User.ToDomain(),
-		ImageURL:  om.ImageURL,
-		CreatedAt: om.CreatedAt,
-		UpdatedAt: om.UpdatedAt,
+		UserID:   om.UserID,
+		User:     om.User.ToDomain(),
+		OfficeID: om.OfficeID,
+		Office:   om.Office.ToDomain(),
+		ImageURL: om.ImageURL,
 	}
 }
 
 type OfficeMemberRequest struct {
 	gorm.Model
-	OfficeID uint
-	Office   *Office
-	Token    string
-	Email    string
+	OfficeID uint    `gorm:"not null;index"`
+	Office   *Office `gorm:"foreignKey:OfficeID;constraint:OnDelete:CASCADE"`
+	Token    string  `gorm:"uniqueIndex;not null"`
+	Email    string  `gorm:"not null"`
 }
 
 func (omr *OfficeMemberRequest) ToDomain() *entity.OfficeMemberRequest {

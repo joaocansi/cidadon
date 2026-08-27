@@ -26,4 +26,5 @@ type CreateOfficeMemberRequestData struct {
 type OfficeMemberRequestRepository interface {
 	Create(context.Context, CreateOfficeMemberRequestData) (*entity.OfficeMemberRequest, error)
 	FindByToken(context.Context, string) (*entity.OfficeMemberRequest, error)
+	Delete(context.Context, uint) error
 }

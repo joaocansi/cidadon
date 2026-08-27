@@ -8,19 +8,16 @@ import (
 	"context"
 	"errors"
 
-	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 type UserRepositoryImpl struct {
 	*database.BaseRepository
-	Logger *zap.SugaredLogger
 }
 
-func NewUserRepository(baseRepository *database.BaseRepository, logger *zap.SugaredLogger) *UserRepositoryImpl {
+func NewUserRepository(baseRepository *database.BaseRepository) *UserRepositoryImpl {
 	return &UserRepositoryImpl{
 		BaseRepository: baseRepository,
-		Logger:         logger,
 	}
 }
 
@@ -31,23 +28,22 @@ func (r *UserRepositoryImpl) Create(ctx context.Context, user repository.CreateU
 		Name:     user.Name,
 		Role:     user.Role,
 	}
-	err := r.GetDB(ctx).Create(&userModel).Error
-	if err != nil {
-		r.Logger.Errorw("failed to create user", err)
-		return nil, repository.ErrDBInternal
+	if err := r.GetDB(ctx).Create(&userModel).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, repository.NewDBError(repository.DBErrorConflict, err)
+		}
+		return nil, repository.NewDBError(repository.DBErrorInternal, err)
 	}
 	return userModel.ToDomain(), nil
 }
 
 func (r *UserRepositoryImpl) FindByEmail(ctx context.Context, email string) (*entity.User, error) {
 	var userModel model.User
-	err := r.GetDB(ctx).First(&userModel, "email = ?", email).Error
-	if err != nil {
+	if err := r.GetDB(ctx).First(&userModel, "email = ?", email).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, repository.ErrDBNotFound
+			return nil, repository.NewDBError(repository.DBErrorNotFound, err)
 		}
-		r.Logger.Errorw("failed to find user by email", "email", email)
-		return nil, err
+		return nil, repository.NewDBError(repository.DBErrorInternal, err)
 	}
 	return userModel.ToDomain(), nil
 }

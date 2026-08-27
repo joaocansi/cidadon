@@ -1,7 +1,6 @@
 package service
 
 import (
-	"cidadon/internal/domain/entity"
 	"cidadon/internal/domain/repository"
 	"cidadon/internal/domain/service"
 	"cidadon/internal/provider"
@@ -10,26 +9,6 @@ import (
 
 	"go.uber.org/zap"
 )
-
-type CreateOfficeInput struct {
-	CouncillorID   uint
-	Contacts       []entity.OfficeContact       `json:"contacts" binding:"required"`
-	SocialNetworks []entity.OfficeSocialNetwork `json:"social_networks" binding:"required"`
-}
-
-type CreateOfficeOutput struct{}
-
-type UpdateOfficeInput struct {
-	CouncillorID   uint
-	Contacts       []entity.OfficeContact       `json:"contacts"`
-	SocialNetworks []entity.OfficeSocialNetwork `json:"social_networks"`
-}
-
-type UpdateOfficeOutput struct{}
-
-type OfficeService interface {
-	Create(context.Context, CreateOfficeInput) (*CreateOfficeOutput, error)
-}
 
 type OfficeServiceImpl struct {
 	officeRepo              repository.OfficeRepository
@@ -54,46 +33,53 @@ func NewOfficeService(
 	}
 }
 
-func (s *OfficeServiceImpl) Create(ctx context.Context, input CreateOfficeInput) (*CreateOfficeOutput, error) {
-	findOffice, err := s.officeRepo.FindByCouncillorID(ctx, input.CouncillorID)
-	if findOffice != nil {
-		return nil, service.Conflict("councillor already created his office")
-	}
-
-	if err != nil {
-		return nil, service.Internal(err, "failed to find office")
-	}
-
+func (s *OfficeServiceImpl) Create(ctx context.Context, input service.CreateOfficeInput) (*service.CreateOfficeOutput, error) {
 	createOfficeData := repository.CreateOfficeData{
 		CouncillorID:   input.CouncillorID,
 		Contacts:       input.Contacts,
 		SocialNetworks: input.SocialNetworks,
 	}
 
-	_, err = s.officeRepo.Create(ctx, createOfficeData)
+	createdOffice, err := s.officeRepo.Create(ctx, createOfficeData)
 	if err != nil {
-		return nil, service.Internal(err, "failed to create office")
+		var dbErr *repository.DBError
+		if errors.As(err, &dbErr) {
+			if dbErr.Code == repository.DBErrorConflict {
+				return nil, service.Conflict("office must be unique")
+			}
+			s.logger.Error("failed to create office member", "councillorID", input.CouncillorID, "error", err)
+			return nil, service.Internal(err)
+		}
 	}
 
-	return &CreateOfficeOutput{}, nil
+	return &service.CreateOfficeOutput{
+		OfficeID:       createdOffice.ID,
+		CouncillorID:   createdOffice.CouncillorID,
+		Contacts:       createdOffice.Contacts,
+		SocialNetworks: createdOffice.SocialNetworks,
+	}, nil
 }
 
-func (s *OfficeServiceImpl) Update(ctx context.Context, input UpdateOfficeInput) (*UpdateOfficeOutput, error) {
-	findOffice, err := s.officeRepo.FindByCouncillorID(ctx, input.CouncillorID)
-	if err != nil {
-		if errors.Is(err, repository.ErrDBNotFound) {
-			return nil, repository.WrapDB(repository.ErrDBNotFound, "office not found")
-		}
-		return nil, service.NotFound("councillor already created his office")
-	}
+func (s *OfficeServiceImpl) Update(ctx context.Context, input service.UpdateOfficeInput) (*service.UpdateOfficeOutput, error) {
 	updateOfficeData := repository.UpdateOfficeData{
-		OfficeID:       findOffice.ID,
 		Contacts:       input.Contacts,
 		SocialNetworks: input.SocialNetworks,
 	}
-	err = s.officeRepo.Update(ctx, updateOfficeData)
+	updatedOffice, err := s.officeRepo.UpdateByCouncillorID(ctx, input.CouncillorID, updateOfficeData)
 	if err != nil {
-		return nil, service.Internal(err, "failed to update office")
+		var dbErr *repository.DBError
+		if errors.As(err, &dbErr) {
+			if dbErr.Code == repository.DBErrorNotFound {
+				return nil, service.NotFound("office not found")
+			}
+			s.logger.Error("failed to update office member", "councillorID", input.CouncillorID, "error", err)
+			return nil, service.Internal(err)
+		}
 	}
-	return nil, nil
+	return &service.UpdateOfficeOutput{
+		OfficeID:       updatedOffice.ID,
+		CouncillorID:   updatedOffice.CouncillorID,
+		Contacts:       updatedOffice.Contacts,
+		SocialNetworks: updatedOffice.SocialNetworks,
+	}, nil
 }

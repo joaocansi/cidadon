@@ -6,8 +6,9 @@ import (
 	"cidadon/internal/infrastructure/database"
 	"cidadon/internal/model"
 	"context"
+	"errors"
 
-	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 type CitizenRepository interface {
@@ -16,13 +17,11 @@ type CitizenRepository interface {
 
 type CitizenRepositoryImpl struct {
 	*database.BaseRepository
-	Logger *zap.SugaredLogger
 }
 
-func NewCitizenRepository(baseRepository *database.BaseRepository, logger *zap.SugaredLogger) *CitizenRepositoryImpl {
+func NewCitizenRepository(baseRepository *database.BaseRepository) *CitizenRepositoryImpl {
 	return &CitizenRepositoryImpl{
 		BaseRepository: baseRepository,
-		Logger:         logger.Named("CitizenRepository"),
 	}
 }
 
@@ -34,10 +33,14 @@ func (r *CitizenRepositoryImpl) Create(ctx context.Context, citizen repository.C
 			Name:     citizen.Name,
 			Role:     string(entity.CitizenUser),
 		},
+		City:  citizen.City,
+		State: citizen.State,
 	}
 	if err := r.GetDB(ctx).Create(&citizenModel).Error; err != nil {
-		r.Logger.Errorw("error while creating citizen", "error", err)
-		return nil, repository.ErrDBInternal
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, repository.NewDBError(repository.DBErrorConflict, err)
+		}
+		return nil, repository.NewDBError(repository.DBErrorInternal, err)
 	}
 	return citizenModel.ToDomain(), nil
 }

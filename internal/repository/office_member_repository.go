@@ -6,19 +6,18 @@ import (
 	"cidadon/internal/infrastructure/database"
 	"cidadon/internal/model"
 	"context"
+	"errors"
 
-	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 type OfficeMemberRepositoryImpl struct {
 	*database.BaseRepository
-	Logger *zap.SugaredLogger
 }
 
-func NewOfficeMemberRepository(baseRepository *database.BaseRepository, logger *zap.SugaredLogger) *OfficeMemberRepositoryImpl {
+func NewOfficeMemberRepository(baseRepository *database.BaseRepository) *OfficeMemberRepositoryImpl {
 	return &OfficeMemberRepositoryImpl{
 		BaseRepository: baseRepository,
-		Logger:         logger.Named("OfficeMemberRepository"),
 	}
 }
 
@@ -33,10 +32,11 @@ func (om *OfficeMemberRepositoryImpl) Create(ctx context.Context, officeMember r
 		},
 		ImageURL: officeMember.ImageURL,
 	}
-	err := om.GetDB(ctx).Create(&officeMemberModel).Error
-	if err != nil {
-		om.Logger.Warnw("failed to create office member", "error", err)
-		return nil, repository.ErrDBInternal
+	if err := om.GetDB(ctx).Create(&officeMemberModel).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, repository.NewDBError(repository.DBErrorConflict, err)
+		}
+		return nil, repository.NewDBError(repository.DBErrorInternal, err)
 	}
 	return officeMemberModel.ToDomain(), nil
 }

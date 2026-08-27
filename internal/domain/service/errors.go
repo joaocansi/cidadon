@@ -88,8 +88,8 @@ func Unavailable(format string, args ...any) *Error {
 	return Newf(CodeUnavailable, format, args...)
 }
 
-func Internal(err error, message string) *Error {
-	return &Error{Code: CodeInternal, Message: message, Err: err}
+func Internal(err error) *Error {
+	return &Error{Code: CodeInternal, Message: "internal server error", Err: err}
 }
 
 func From(err error) (*Error, bool) {

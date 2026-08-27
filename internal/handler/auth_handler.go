@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"cidadon/internal/service"
+	"cidadon/internal/domain/service"
 	"net/http"
 	"time"
 
@@ -32,7 +32,7 @@ func (ah *Handler) Login(c *gin.Context) {
 	}
 
 	ah.setAuthCookies(c, session)
-	c.Status(http.StatusCreated)
+	c.JSON(http.StatusCreated, session)
 }
 
 func (ah *Handler) RegisterCitizen(c *gin.Context) {
@@ -42,13 +42,13 @@ func (ah *Handler) RegisterCitizen(c *gin.Context) {
 		return
 	}
 
-	err := ah.AuthService.RegisterCitizen(c.Request.Context(), registerInput)
+	citizen, err := ah.AuthService.RegisterCitizen(c.Request.Context(), registerInput)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	c.Status(http.StatusCreated)
+	c.JSON(http.StatusCreated, citizen)
 }
 
 func (ah *Handler) RegisterCouncillor(c *gin.Context) {
@@ -58,13 +58,13 @@ func (ah *Handler) RegisterCouncillor(c *gin.Context) {
 		return
 	}
 
-	err := ah.AuthService.RegisterCouncillor(c.Request.Context(), registerInput)
+	councillor, err := ah.AuthService.RegisterCouncillor(c.Request.Context(), registerInput)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	c.Status(http.StatusCreated)
+	c.JSON(http.StatusCreated, councillor)
 }
 
 func (ah *Handler) RegisterOfficeMember(c *gin.Context) {
@@ -74,16 +74,16 @@ func (ah *Handler) RegisterOfficeMember(c *gin.Context) {
 		return
 	}
 
-	err := ah.AuthService.RegisterOfficeMember(c.Request.Context(), registerInput)
+	officeMember, err := ah.AuthService.RegisterOfficeMember(c.Request.Context(), registerInput)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	c.Status(http.StatusCreated)
+	c.JSON(http.StatusCreated, officeMember)
 }
 
-func (ah *Handler) setAuthCookies(c *gin.Context, session service.LoginOutput) {
+func (ah *Handler) setAuthCookies(c *gin.Context, session *service.LoginOutput) {
 	now := time.Now()
 	c.SetCookie(accessTokenCookieKey, session.AccessToken, int(session.AccessTokenExpiresIn.Sub(now).Seconds()), "/", "", false, true)
 	c.SetCookie(refreshTokenCookieKey, session.RefreshToken, int(session.RefreshTokenExpiresIn.Sub(now).Seconds()), "/", "", false, true)

@@ -8,19 +8,16 @@ import (
 	"context"
 	"errors"
 
-	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 type SessionRepositoryImpl struct {
 	*database.BaseRepository
-	Logger *zap.SugaredLogger
 }
 
-func NewSessionRepository(baseRepository *database.BaseRepository, logger *zap.SugaredLogger) *SessionRepositoryImpl {
+func NewSessionRepository(baseRepository *database.BaseRepository) *SessionRepositoryImpl {
 	return &SessionRepositoryImpl{
 		BaseRepository: baseRepository,
-		Logger:         logger.Named("SessionRepository"),
 	}
 }
 
@@ -29,9 +26,9 @@ func (r *SessionRepositoryImpl) FindByRefreshTokenHash(ctx context.Context, hash
 	err := r.GetDB(ctx).Where("refresh_token_hash = ?", hash).First(&sessionModel).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, repository.ErrDBNotFound
+			return nil, repository.NewDBError(repository.DBErrorNotFound, err)
 		}
-		return nil, repository.ErrDBInternal
+		return nil, repository.NewDBError(repository.DBErrorInternal, err)
 	}
 	return sessionModel.ToDomain(), nil
 }
@@ -43,9 +40,11 @@ func (r *SessionRepositoryImpl) Create(ctx context.Context, session repository.C
 		RefreshTokenHash: session.RefreshTokenHash,
 		UserAgent:        session.UserAgent,
 	}
-	err := r.GetDB(ctx).Create(&sessionModel).Error
-	if err != nil {
-		return nil, repository.ErrDBInternal
+	if err := r.GetDB(ctx).Create(&sessionModel).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, repository.NewDBError(repository.DBErrorConflict, err)
+		}
+		return nil, repository.NewDBError(repository.DBErrorInternal, err)
 	}
-	return sessionModel.ToDomain(), err
+	return sessionModel.ToDomain(), nil
 }

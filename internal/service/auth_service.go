@@ -1,24 +1,19 @@
 package service
 
 import (
+	"cidadon/internal/domain/entity"
 	"cidadon/internal/domain/repository"
 	"cidadon/internal/domain/service"
 	"cidadon/internal/infrastructure/database"
 	"cidadon/internal/provider"
+	"cidadon/internal/utils"
 	"context"
-	stderrors "errors"
+	"errors"
 	"fmt"
 	"time"
 
 	"go.uber.org/zap"
 )
-
-type AuthService interface {
-	Login(ctx context.Context, data LoginInput) (LoginOutput, error)
-	RegisterCitizen(ctx context.Context, data RegisterCitizenInput) error
-	RegisterCouncillor(ctx context.Context, data RegisterCouncillorInput) error
-	RegisterOfficeMember(ctx context.Context, data RegisterOfficeMemberInput) error
-}
 
 type AuthServiceImpl struct {
 	userRepo                repository.UserRepository
@@ -64,47 +59,37 @@ func NewAuthService(
 	}
 }
 
-type LoginInput struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,gte=6,lte=12"`
-}
-
-type LoginOutput struct {
-	AccessToken           string    `json:"access_token"`
-	RefreshToken          string    `json:"refresh_token"`
-	AccessTokenExpiresIn  time.Time `json:"access_token_expires_in"`
-	RefreshTokenExpiresIn time.Time `json:"refresh_token_expires_in"`
-}
-
-func (as *AuthServiceImpl) Login(ctx context.Context, data LoginInput) (LoginOutput, error) {
+func (as *AuthServiceImpl) Login(ctx context.Context, data service.LoginInput) (*service.LoginOutput, error) {
 	user, err := as.userRepo.FindByEmail(ctx, data.Email)
 	if err != nil {
-		if stderrors.Is(err, repository.ErrDBNotFound) {
-			return LoginOutput{}, service.NotFound("email/password does not match")
+		var dbErr *repository.DBError
+		if errors.As(err, &dbErr) {
+			if dbErr.Code == repository.DBErrorNotFound {
+				return nil, service.Unauthorized("email/password does not match")
+			}
+			as.logger.Error("failed to find user", "email", data.Email, "error", err)
+			return nil, service.Internal(err)
 		}
-		as.logger.Error("error finding user by email", err)
-		return LoginOutput{}, service.Internal(err, "error finding user by email")
 	}
 
 	if ok := as.cryptoProvider.Compare(data.Password, user.Password); !ok {
-		return LoginOutput{}, service.Unauthorized("email/password does not match")
+		return nil, service.Unauthorized("email/password does not match")
 	}
 
 	subject := fmt.Sprintf("%d:%s", user.ID, user.Role)
-
 	refreshToken, err := as.hashProvider.Generate()
 	if err != nil {
-		as.logger.Error("error generating refresh token", err)
-		return LoginOutput{}, service.Internal(err, "error creating session")
+		as.logger.Error("failed to generate refreshToken", "email", user.Email, "error", err)
+		return nil, service.Internal(err)
 	}
 
 	accessToken, err := as.jwtProvider.Generate(subject)
 	if err != nil {
-		as.logger.Error("error generating access token", err)
-		return LoginOutput{}, service.Internal(err, "error creating session")
+		as.logger.Error("failed to generate accessToken", "email", user.Email, "error", err)
+		return nil, service.Internal(err)
 	}
 
-	createdSessionData := repository.CreateSessionData{
+	createSessionData := repository.CreateSessionData{
 		UserID:           user.ID,
 		RefreshTokenHash: refreshToken.Hash,
 		ExpiresAt:        time.Now().Add(time.Hour * 24 * 365),
@@ -112,13 +97,13 @@ func (as *AuthServiceImpl) Login(ctx context.Context, data LoginInput) (LoginOut
 		UserAgent:        "",
 	}
 
-	_, err = as.sessionRepo.Create(ctx, createdSessionData)
+	createdSessionData, err := as.sessionRepo.Create(ctx, createSessionData)
 	if err != nil {
-		as.logger.Error("error creating session", err)
-		return LoginOutput{}, service.Internal(err, "error creating session")
+		as.logger.Error("failed to create session", "email", user.Email, "error", err)
+		return nil, service.Internal(err)
 	}
 
-	return LoginOutput{
+	return &service.LoginOutput{
 		RefreshTokenExpiresIn: createdSessionData.ExpiresAt,
 		RefreshToken:          refreshToken.Value,
 		AccessTokenExpiresIn:  accessToken.ExpiresAt,
@@ -126,125 +111,126 @@ func (as *AuthServiceImpl) Login(ctx context.Context, data LoginInput) (LoginOut
 	}, nil
 }
 
-type RegisterBaseInput struct {
-	Name     string `json:"name" binding:"required"`
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,gte=6,lte=12"`
-}
-
-type RegisterCitizenInput struct {
-	RegisterBaseInput
-}
-
-func (as *AuthServiceImpl) RegisterCitizen(ctx context.Context, input RegisterCitizenInput) error {
-	user, err := as.userRepo.FindByEmail(ctx, input.Email)
-	if user != nil {
-		if err != nil {
-			as.logger.Error("error finding user by email", err)
-			return service.Internal(err, "error finding user by email")
-		}
-		return service.Conflict("email already registered")
-	}
-
+func (as *AuthServiceImpl) RegisterCitizen(ctx context.Context, input service.RegisterCitizenInput) (*service.RegisterCitizenOutput, error) {
 	hashedPassword := as.cryptoProvider.Hash(input.Password)
-	if err != nil {
-		as.logger.Error("error hashing password", err)
-		return service.Internal(err, "error hashing password")
-	}
-
 	createCitizenData := repository.CreateCitizenData{
 		Name:     input.Name,
 		Email:    input.Email,
 		Password: hashedPassword,
+		City:     input.City,
+		State:    input.State,
 	}
 
-	_, err = as.citizenRepo.Create(ctx, createCitizenData)
+	createdCitizen, err := as.citizenRepo.Create(ctx, createCitizenData)
 	if err != nil {
-		as.logger.Error("error creating citizen", err)
-		return service.Internal(err, "error creating citizen")
-	}
-
-	return nil
-}
-
-type RegisterCouncillorInput struct {
-	RegisterBaseInput
-	Party    string `json:"party" binding:"required"`
-	ImageURL string `json:"image_url" binding:"required"`
-}
-
-func (as *AuthServiceImpl) RegisterCouncillor(ctx context.Context, input RegisterCouncillorInput) error {
-	user, err := as.userRepo.FindByEmail(ctx, input.Email)
-	if user != nil {
-		if err != nil {
-			as.logger.Error("error finding user by email", err)
-			return service.Internal(err, "error finding user by email")
+		var dbError *repository.DBError
+		if errors.As(err, &dbError) {
+			if dbError.Code == repository.DBErrorConflict {
+				return nil, service.Conflict("email already registered")
+			}
+			as.logger.Error("failed to create citizen", "email", input.Email, "error", err)
+			return nil, service.Internal(err)
 		}
-		return service.Conflict("email already registered")
 	}
 
+	return &service.RegisterCitizenOutput{
+		RegisterBaseOutput: service.RegisterBaseOutput{
+			Name:  createdCitizen.User.Name,
+			Email: createdCitizen.User.Email,
+		},
+		City:  createdCitizen.City,
+		State: createdCitizen.State,
+	}, nil
+}
+
+func (as *AuthServiceImpl) RegisterCouncillor(ctx context.Context, input service.RegisterCouncillorInput) (*service.RegisterCouncillorOutput, error) {
 	hashedPassword := as.cryptoProvider.Hash(input.Password)
-	if err != nil {
-		as.logger.Error("error hashing password", err)
-		return service.Internal(err, "error hashing password")
-	}
-
 	createCouncillorData := repository.CreateCouncillorData{
 		Party:    input.Party,
 		Name:     input.Name,
 		Email:    input.Email,
 		Password: hashedPassword,
+		City:     input.City,
+		State:    input.State,
+		ImageURL: input.ImageURL,
 	}
 
-	_, err = as.councillorRepo.Create(ctx, createCouncillorData)
+	createdCouncillor, err := as.councillorRepo.Create(ctx, createCouncillorData)
 	if err != nil {
-		as.logger.Error("error creating user", err)
-		return service.Internal(err, "error creating user")
+		var dbError *repository.DBError
+		if errors.As(err, &dbError) {
+			if dbError.Code == repository.DBErrorConflict {
+				return nil, service.Conflict("email already registered")
+			}
+			as.logger.Error("failed to create councillor", "email", input.Email, "error", err)
+			return nil, service.Internal(err)
+		}
 	}
 
-	return nil
+	return &service.RegisterCouncillorOutput{
+		RegisterBaseOutput: service.RegisterBaseOutput{
+			Name:  createdCouncillor.User.Name,
+			Email: createdCouncillor.User.Email,
+		},
+		ImageURL: createdCouncillor.ImageURL,
+		Party:    createdCouncillor.Party,
+		City:     createdCouncillor.City,
+		State:    createdCouncillor.State,
+	}, nil
 }
 
-type RegisterOfficeMemberInput struct {
-	RegisterBaseInput
-	Token string `json:"token" binding:"required"`
-}
-
-func (as *AuthServiceImpl) RegisterOfficeMember(ctx context.Context, input RegisterOfficeMemberInput) error {
-	_, err := as.officeMemberRequestRepo.FindByToken(ctx, input.Token)
+func (as *AuthServiceImpl) RegisterOfficeMember(ctx context.Context, input service.RegisterOfficeMemberInput) (*service.RegisterOfficeMemberOutput, error) {
+	officeMemberRequest, err := as.officeMemberRequestRepo.FindByToken(ctx, input.Token)
 	if err != nil {
-		if stderrors.Is(err, repository.ErrDBNotFound) {
-			return service.NotFound("no office member request found")
+		var dbErr *repository.DBError
+		if errors.As(err, &dbErr) {
+			if dbErr.Code == repository.DBErrorNotFound {
+				return nil, service.NotFound("token provided does not exist")
+			}
+			as.logger.Error("failed to find office member request", "token", utils.Mask(input.Token, 50), "error", err)
+			return nil, service.Internal(err)
 		}
-		as.logger.Error("error finding office member", err)
-		return service.Internal(err, "error finding office member")
-	}
-
-	user, err := as.userRepo.FindByEmail(ctx, input.Email)
-	if user != nil {
-		if err != nil {
-			as.logger.Error("error finding user by email", err)
-			return service.Internal(err, "error finding user by email")
-		}
-		return service.Conflict("email already registered")
 	}
 
 	hashedPassword := as.cryptoProvider.Hash(input.Password)
-	if err != nil {
-		as.logger.Error("error hashing password", err)
-		return service.Internal(err, "error hashing password")
-	}
-
 	createOfficeMemberData := repository.CreateOfficeMemberData{
-		Email:    input.Email,
+		Email:    officeMemberRequest.Email,
 		Password: hashedPassword,
 		Name:     input.Name,
-	}
-	_, err = as.officeMemberRepo.Create(ctx, createOfficeMemberData)
-	if err != nil {
-		as.logger.Error("error creating user", err)
-		return service.Internal(err, "error creating user")
+		OfficeID: officeMemberRequest.OfficeID,
 	}
 
-	return nil
+	var createdOfficeMember *entity.OfficeMember
+	err = as.transactionManager.WithTransaction(ctx, func(ctx context.Context) error {
+		createdOfficeMember, err = as.officeMemberRepo.Create(ctx, createOfficeMemberData)
+		if err != nil {
+			var dbError *repository.DBError
+			if errors.As(err, &dbError) && dbError.Code == repository.DBErrorConflict {
+				return service.Conflict("email already registered")
+			}
+			as.logger.Error("failed to create office member", "email", officeMemberRequest.Email, "error", err)
+			return service.Internal(err)
+		}
+
+		err = as.officeMemberRequestRepo.Delete(ctx, officeMemberRequest.ID)
+		if err != nil {
+			as.logger.Error("failed to delete office member request", "officeMemberRequestID", officeMemberRequest.ID, "error", err)
+			return service.Internal(err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &service.RegisterOfficeMemberOutput{
+		RegisterBaseOutput: service.RegisterBaseOutput{
+			Name:  createdOfficeMember.User.Name,
+			Email: createdOfficeMember.User.Email,
+		},
+		OfficeID: createdOfficeMember.OfficeID,
+		ImageURL: createdOfficeMember.ImageURL,
+	}, nil
 }

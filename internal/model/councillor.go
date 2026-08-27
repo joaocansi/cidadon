@@ -2,18 +2,15 @@ package model
 
 import (
 	"cidadon/internal/domain/entity"
-
-	"gorm.io/gorm"
 )
 
 type Councillor struct {
-	gorm.Model
-	UserID   uint
-	User     *User
-	Party    string
+	UserID   uint   `gorm:"primaryKey"`
+	User     *User  `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
+	Party    string `gorm:"not null"`
 	ImageURL string
-	State    string
-	City     string
+	State    string `gorm:"not null"`
+	City     string `gorm:"not null"`
 }
 
 func (c *Councillor) ToDomain() *entity.Councillor {
@@ -22,14 +19,11 @@ func (c *Councillor) ToDomain() *entity.Councillor {
 	}
 
 	return &entity.Councillor{
-		ID:        c.ID,
-		UserID:    c.UserID,
-		User:      c.User.ToDomain(),
-		Party:     c.Party,
-		ImageURL:  c.ImageURL,
-		City:      c.City,
-		State:     c.State,
-		CreatedAt: c.CreatedAt,
-		UpdatedAt: c.UpdatedAt,
+		UserID:   c.UserID,
+		User:     c.User.ToDomain(),
+		Party:    c.Party,
+		ImageURL: c.ImageURL,
+		City:     c.City,
+		State:    c.State,
 	}
 }

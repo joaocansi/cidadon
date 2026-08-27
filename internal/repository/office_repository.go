@@ -8,45 +8,40 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
-	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type OfficeRepositoryImpl struct {
 	*database.BaseRepository
-	Logger *zap.SugaredLogger
 }
 
-func NewOfficeRepository(baseRepository *database.BaseRepository, logger *zap.SugaredLogger) *OfficeRepositoryImpl {
+func NewOfficeRepository(baseRepository *database.BaseRepository) *OfficeRepositoryImpl {
 	return &OfficeRepositoryImpl{
 		BaseRepository: baseRepository,
-		Logger:         logger.Named("OfficeRepository"),
 	}
 }
 
 func (o *OfficeRepositoryImpl) FindByID(ctx context.Context, id uint) (*entity.Office, error) {
 	var officeModel model.Office
-	err := o.GetDB(ctx).First(&officeModel, "id = ?", id).Error
-	if err != nil {
+	if err := o.GetDB(ctx).First(&officeModel, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, repository.WrapDB(repository.ErrDBNotFound, "office not found")
+			return nil, repository.NewDBError(repository.DBErrorNotFound, err)
 		}
-		o.Logger.Warnw("failed to get office by id", "error", err)
-		return nil, err
+		return nil, repository.NewDBError(repository.DBErrorInternal, err)
 	}
 	return officeModel.ToDomain(), nil
 }
 
 func (o *OfficeRepositoryImpl) FindByCouncillorID(ctx context.Context, councillorID uint) (*entity.Office, error) {
 	var officeModel model.Office
-	err := o.GetDB(ctx).First(&officeModel, "councillor_id = ?", councillorID).Error
-	if err != nil {
+	if err := o.GetDB(ctx).First(&officeModel, "councillor_id = ?", councillorID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, repository.WrapDB(repository.ErrDBNotFound, "office not found")
+			return nil, repository.NewDBError(repository.DBErrorNotFound, err)
 		}
-		o.Logger.Warnw("failed to get office by id", "error", err)
-		return nil, err
+		return nil, repository.NewDBError(repository.DBErrorInternal, err)
 	}
 	return officeModel.ToDomain(), nil
 }
@@ -57,34 +52,40 @@ func (o *OfficeRepositoryImpl) Create(ctx context.Context, data repository.Creat
 		Contacts:       o.toRawMessage(data.Contacts),
 		SocialNetworks: o.toRawMessage(data.SocialNetworks),
 	}
-	err := o.GetDB(ctx).Create(&officeModel).Error
-	if err != nil {
-		o.Logger.Warnw("failed to create office by id", "error", err)
-		return nil, repository.ErrDBInternal
+	if err := o.GetDB(ctx).Create(&officeModel).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, repository.NewDBError(repository.DBErrorConflict, err)
+		}
+		return nil, repository.NewDBError(repository.DBErrorInternal, err)
 	}
 	return officeModel.ToDomain(), nil
 }
 
-func (o *OfficeRepositoryImpl) Update(ctx context.Context, data repository.UpdateOfficeData) error {
+func (o *OfficeRepositoryImpl) UpdateByCouncillorID(ctx context.Context, councillorID uint, data repository.UpdateOfficeData) (*entity.Office, error) {
 	officeModel := model.Office{
 		SocialNetworks: o.toRawMessage(data.SocialNetworks),
 		Contacts:       o.toRawMessage(data.Contacts),
 	}
-	result := o.GetDB(ctx).Model(&model.Office{}).Where("id = ?", data.OfficeID).Updates(&officeModel)
+
+	result := o.GetDB(ctx).Model(&officeModel).
+		Clauses(clause.Returning{}).
+		Where("councillor_id = ?", councillorID).
+		Updates(&officeModel)
+
 	if result.Error != nil {
-		o.Logger.Warnw("failed to update office by id", "error", result.Error)
-		return repository.ErrDBInternal
+		return nil, repository.NewDBError(repository.DBErrorInternal, result.Error)
 	}
+
 	if result.RowsAffected == 0 {
-		return repository.ErrDBNotFound
+		return nil, repository.NewDBError(repository.DBErrorNotFound, fmt.Errorf("office not found"))
 	}
-	return nil
+
+	return officeModel.ToDomain(), nil
 }
 
 func (o *OfficeRepositoryImpl) toRawMessage(v any) json.RawMessage {
 	b, err := json.Marshal(v)
 	if err != nil {
-		o.Logger.Warnw("failed to marshal field to json.RawMessage", "error", err)
 		return json.RawMessage("[]")
 	}
 	return b

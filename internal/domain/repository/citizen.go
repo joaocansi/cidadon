@@ -9,6 +9,8 @@ type CreateCitizenData struct {
 	Name     string
 	Email    string
 	Password string
+	City     string
+	State    string
 }
 
 type CitizenRepository interface {

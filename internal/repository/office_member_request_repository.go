@@ -8,19 +8,16 @@ import (
 	"context"
 	"errors"
 
-	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 type OfficeMemberRequestRepositoryImpl struct {
 	*database.BaseRepository
-	Logger *zap.SugaredLogger
 }
 
-func NewOfficeMemberRequestRepository(baseRepository *database.BaseRepository, logger *zap.SugaredLogger) *OfficeMemberRequestRepositoryImpl {
+func NewOfficeMemberRequestRepository(baseRepository *database.BaseRepository) *OfficeMemberRequestRepositoryImpl {
 	return &OfficeMemberRequestRepositoryImpl{
 		BaseRepository: baseRepository,
-		Logger:         logger.Named("OfficeMemberRequestRepository"),
 	}
 }
 
@@ -30,23 +27,33 @@ func (om *OfficeMemberRequestRepositoryImpl) Create(ctx context.Context, officeM
 		Email:    officeMemberRequest.Email,
 		Token:    officeMemberRequest.Token,
 	}
-	err := om.GetDB(ctx).Create(&officeMemberRequestModel).Error
-	if err != nil {
-		om.Logger.Warnw("failed to create office member request", "error", err)
-		return nil, repository.ErrDBInternal
+	if err := om.GetDB(ctx).Create(&officeMemberRequestModel).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, repository.NewDBError(repository.DBErrorConflict, err)
+		}
+		return nil, repository.NewDBError(repository.DBErrorInternal, err)
 	}
 	return officeMemberRequestModel.ToDomain(), nil
 }
 
 func (om *OfficeMemberRequestRepositoryImpl) FindByToken(ctx context.Context, token string) (*entity.OfficeMemberRequest, error) {
 	var officeMemberRequest model.OfficeMemberRequest
-	err := om.GetDB(ctx).Where("token = ?", token).First(&officeMemberRequest).Error
-	if err != nil {
+	if err := om.GetDB(ctx).Where("token = ?", token).First(&officeMemberRequest).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, repository.ErrDBNotFound
+			return nil, repository.NewDBError(repository.DBErrorNotFound, err)
 		}
-		om.Logger.Warnw("failed to find office member request", "error", err)
-		return nil, repository.ErrDBInternal
+		return nil, repository.NewDBError(repository.DBErrorInternal, err)
 	}
 	return officeMemberRequest.ToDomain(), nil
+}
+
+func (om *OfficeMemberRequestRepositoryImpl) Delete(ctx context.Context, id uint) error {
+	tx := om.GetDB(ctx).Delete(&model.OfficeMemberRequest{}, id)
+	if tx.Error != nil {
+		return repository.NewDBError(repository.DBErrorInternal, tx.Error)
+	}
+	if tx.RowsAffected == 0 {
+		return repository.NewDBError(repository.DBErrorNotFound, gorm.ErrRecordNotFound)
+	}
+	return nil
 }

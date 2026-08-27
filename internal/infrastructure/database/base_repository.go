@@ -17,9 +17,8 @@ func NewBaseRepository(db *gorm.DB) *BaseRepository {
 }
 
 func (repo *BaseRepository) GetDB(ctx context.Context) *gorm.DB {
-	DB := repo.DB
-	if ctx.Value(dbContextKey{}) != nil {
-		DB = ctx.Value(dbContextKey{}).(*gorm.DB)
+	if tx, ok := ctx.Value(dbContextKey{}).(*gorm.DB); ok {
+		return tx.WithContext(ctx)
 	}
-	return DB
+	return repo.DB.WithContext(ctx)
 }

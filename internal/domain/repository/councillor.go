@@ -11,6 +11,8 @@ type CreateCouncillorData struct {
 	Password string
 	Party    string
 	ImageURL string
+	City     string
+	State    string
 }
 
 type CouncillorRepository interface {

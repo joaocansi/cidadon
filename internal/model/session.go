@@ -9,10 +9,10 @@ import (
 
 type Session struct {
 	gorm.Model
-	RefreshTokenHash string
-	UserID           uint
-	User             *User
-	ExpiresAt        time.Time
+	RefreshTokenHash string    `gorm:"not null"`
+	UserID           uint      `gorm:"not null;index"`
+	User             *User     `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
+	ExpiresAt        time.Time `gorm:"not null"`
 	IpAddress        string
 	UserAgent        string
 	RevokedAt        *time.Time

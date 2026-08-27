@@ -19,7 +19,9 @@ func NewPostgresConnection(cfg environment.Database) (*gorm.DB, error) {
 		cfg.SSLMode,
 	)
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		TranslateError: true,
+	})
 	if err != nil {
 		return nil, err
 	}

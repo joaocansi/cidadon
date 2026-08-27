@@ -52,12 +52,12 @@ func (a *AuthMiddleware) AuthHandler(allowedRoles ...entity.UserRole) gin.Handle
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
-
 		for _, role := range allowedRoles {
 			if subjectAuth.Role == role {
 				c.Set("userId", subjectAuth.UserID)
 				c.Set("userRole", subjectAuth.Role)
 				c.Next()
+				return
 			}
 		}
 

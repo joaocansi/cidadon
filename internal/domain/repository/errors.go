@@ -1,32 +1,29 @@
 package repository
 
-import (
-	"cidadon/internal/domain/service"
-	stderrors "errors"
+type DBErrorCode uint8
+
+const (
+	DBErrorNotFound DBErrorCode = iota
+	DBErrorConflict
+	DBErrorInternal
 )
 
-var (
-	ErrDBNotFound = stderrors.New("resource not found")
-	ErrDBConflict = stderrors.New("resource conflict")
-	ErrDBInternal = stderrors.New("internal error")
-)
+type DBError struct {
+	Code DBErrorCode
+	Err  error
+}
 
-func ClassifyCode(err error) service.Code {
-	switch {
-	case stderrors.Is(err, ErrDBNotFound):
-		return service.CodeNotFound
-	case stderrors.Is(err, ErrDBConflict):
-		return service.CodeConflict
-	case stderrors.Is(err, ErrDBInternal):
-		return service.CodeInternal
-	default:
-		return service.CodeInternal
+func NewDBError(code DBErrorCode, err error) *DBError {
+	return &DBError{
+		Code: code,
+		Err:  err,
 	}
 }
 
-func WrapDB(err error, message string) *service.Error {
-	if err == nil {
-		return nil
-	}
-	return service.Wrap(err, ClassifyCode(err), message)
+func (e *DBError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *DBError) Unwrap() error {
+	return e.Err
 }

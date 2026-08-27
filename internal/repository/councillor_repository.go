@@ -6,23 +6,18 @@ import (
 	"cidadon/internal/infrastructure/database"
 	"cidadon/internal/model"
 	"context"
+	"errors"
 
-	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
-
-type CouncillorRepository interface {
-	Create(ctx context.Context, user *entity.Councillor) error
-}
 
 type CouncillorRepositoryImpl struct {
 	*database.BaseRepository
-	Logger *zap.SugaredLogger
 }
 
-func NewCouncillorRepository(baseRepository *database.BaseRepository, logger *zap.SugaredLogger) *CouncillorRepositoryImpl {
+func NewCouncillorRepository(baseRepository *database.BaseRepository) *CouncillorRepositoryImpl {
 	return &CouncillorRepositoryImpl{
 		BaseRepository: baseRepository,
-		Logger:         logger.Named("CouncillorRepository"),
 	}
 }
 
@@ -36,11 +31,14 @@ func (c *CouncillorRepositoryImpl) Create(ctx context.Context, data repository.C
 		},
 		ImageURL: data.ImageURL,
 		Party:    data.Party,
+		City:     data.City,
+		State:    data.State,
 	}
-	err := c.GetDB(ctx).Create(&councillorModel).Error
-	if err != nil {
-		c.Logger.Errorw("failed to create model", "error", err)
-		return nil, repository.ErrDBInternal
+	if err := c.GetDB(ctx).Create(&councillorModel).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, repository.NewDBError(repository.DBErrorConflict, err)
+		}
+		return nil, repository.NewDBError(repository.DBErrorInternal, err)
 	}
 	return councillorModel.ToDomain(), nil
 }
