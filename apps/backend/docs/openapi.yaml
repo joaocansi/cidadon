@@ -1,0 +1,948 @@
+openapi: 3.1.0
+info:
+  title: Cidadon API
+  version: 0.2.0
+  description: API contract for the Cidadon civic demand platform.
+servers:
+  - url: http://localhost:8080
+paths:
+  /auth/login:
+    post:
+      summary: Login with email and password
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "201":
+          description: Session created successfully. Authentication tokens are returned only as HttpOnly cookies.
+          headers:
+            Set-Cookie:
+              description: HttpOnly accessToken and refreshToken cookies.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+  /auth/me:
+    get:
+      summary: Return the authenticated user's role for access routing
+      operationId: getCurrentUser
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Current authenticated user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentUser"
+        "401":
+          $ref: "#/components/responses/Error"
+  /auth/logout:
+    post:
+      summary: Clear the current browser session
+      operationId: logout
+      security:
+        - cookieAuth: []
+      responses:
+        "204":
+          description: Session cookies cleared.
+  /auth/register/citizen:
+    post:
+      summary: Register a citizen
+      operationId: registerCitizen
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterCitizenRequest"
+      responses:
+        "201":
+          description: Citizen registered successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterCitizenResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /auth/register/councillor:
+    post:
+      summary: Register a councillor
+      operationId: registerCouncillor
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterCouncillorRequest"
+      responses:
+        "201":
+          description: Councillor registered successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterCouncillorResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /auth/register/office-member:
+    post:
+      summary: Register an office member from an invitation token
+      operationId: registerOfficeMember
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterOfficeMemberRequest"
+      responses:
+        "201":
+          description: Office member registered successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterOfficeMemberResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /auth/register/office-member/invitation:
+    get:
+      summary: Preview the valid office invitation associated with a token
+      operationId: previewOfficeMemberInvitation
+      security: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 32
+            maxLength: 256
+      responses:
+        "200":
+          description: Public office information for a valid invitation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfficeMemberInvitation"
+        "404":
+          $ref: "#/components/responses/Error"
+  /demands:
+    get:
+      summary: List public demands
+      operationId: listDemands
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/City"
+        - $ref: "#/components/parameters/State"
+        - $ref: "#/components/parameters/Neighborhood"
+        - $ref: "#/components/parameters/Category"
+        - $ref: "#/components/parameters/Status"
+      responses:
+        "200":
+          description: Public demands returned successfully.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Demand"
+        "400":
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Create a demand
+      description: When no office is selected, ranks up to three offices by prior activity within progressively expanded radii of 5, 15, 30 and 60 km, then falls back to every office in the informed city and state.
+      operationId: createDemand
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDemandRequest"
+      responses:
+        "201":
+          description: Demand created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Demand"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /demands/{id}:
+    get:
+      summary: Get demand details
+      operationId: getDemandById
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Demand returned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Demand"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /demands/mine:
+    get:
+      summary: List demand history for the authenticated citizen
+      operationId: listMyDemands
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Citizen demand history.
+  /demands/office:
+    get:
+      summary: List demands assigned to the authenticated office
+      operationId: listOfficeDemands
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Assigned demands.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Demand"
+  /demands/{id}/activity:
+    get:
+      summary: Immutable activity timeline and chronological comments
+      operationId: demandActivity
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Demand activity.
+  /demands/{id}/comments:
+    post:
+      summary: Add a public authenticated comment with text and/or up to five images
+      operationId: createDemandComment
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/DemandId"
+      responses: { "201": { description: Comment created } }
+  /demands/{id}/claim:
+    post:
+      summary: Claim a registered demand; the claiming office becomes solely responsible
+      operationId: claimDemand
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/DemandId"
+      responses: { "200": { description: Demand moved to under review } }
+  /demands/{id}/start:
+    post:
+      summary: Start execution as the responsible office
+      operationId: startDemand
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/DemandId"
+      responses: { "200": { description: Demand moved to in progress } }
+  /demands/{id}/request-confirmation:
+    post:
+      summary: Request author validation with a mandatory update
+      operationId: requestDemandConfirmation
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/DemandId"
+      responses: { "200": { description: Demand awaits confirmation for 120 hours } }
+  /demands/{id}/confirm:
+    post:
+      summary: Confirm completion as the demand author
+      operationId: confirmDemand
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/DemandId"
+      responses: { "200": { description: Demand completed } }
+  /demands/{id}/reopen:
+    post:
+      summary: Reopen as the demand author with a mandatory explanation
+      operationId: reopenDemand
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/DemandId"
+      responses: { "200": { description: Demand returned to under review } }
+  /notifications:
+    get:
+      summary: List persistent notifications for the current user
+      security: [{ cookieAuth: [] }]
+      responses: { "200": { description: Notifications } }
+  /notifications/stream:
+    get:
+      summary: Authenticated SSE notification stream
+      security: [{ cookieAuth: [] }]
+      responses: { "200": { description: Server-sent notification events } }
+  /office:
+    get:
+      summary: Search public office profiles by councillor name, party or region
+      operationId: searchOffices
+      security: []
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - $ref: "#/components/parameters/City"
+        - $ref: "#/components/parameters/State"
+      responses:
+        "200":
+          description: Public office profiles
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PublicOffice" }
+    post:
+      summary: Create the authenticated councillor's office
+      operationId: createOffice
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OfficeCreateRequest" }
+      responses:
+        "201":
+          description: Office created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OfficeCreateResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+    put:
+      summary: Update public office details, contacts and social networks
+      operationId: updateOffice
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OfficeUpdateRequest" }
+      responses:
+        "200":
+          description: Updated office
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OfficeMutationResponse" }
+  /office/me:
+    get:
+      summary: Get the office managed by the authenticated councillor or member
+      operationId: getManagedOffice
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Managed office with active members
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ManagedOffice" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /office/{id}:
+    get:
+      summary: Get a public office profile
+      operationId: getOfficeProfile
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Public office profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicOffice" }
+        "404": { $ref: "#/components/responses/Error" }
+  /office/member-request:
+    post:
+      summary: Invite a new office member by email
+      operationId: inviteOfficeMember
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InviteOfficeMemberRequest" }
+      responses:
+        "201":
+          description: Invitation email queued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InviteOfficeMemberResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /office/member-requests:
+    get:
+      summary: List active office-member invitations for the authenticated councillor
+      operationId: listOfficeMemberRequests
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Active invitations, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/OfficeMemberRequest" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /office/member-requests/{id}:
+    delete:
+      summary: Cancel an active office-member invitation
+      operationId: cancelOfficeMemberRequest
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "204": { description: Invitation cancelled. }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /office/members/{id}:
+    delete:
+      summary: Remove an office member and revoke their access
+      description: The member's Cidadon account and active sessions are removed after ownership is verified.
+      operationId: removeOfficeMember
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "204": { description: Member removed and access revoked. }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: accessToken
+  parameters:
+    DemandId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    City:
+      name: city
+      in: query
+      schema:
+        type: string
+    State:
+      name: state
+      in: query
+      schema:
+        type: string
+        minLength: 2
+        maxLength: 2
+    Neighborhood:
+      name: neighborhood
+      in: query
+      schema:
+        type: string
+    Category:
+      name: category
+      in: query
+      schema:
+        type: string
+    Status:
+      name: status
+      in: query
+      schema:
+        $ref: "#/components/schemas/DemandStatus"
+  responses:
+    Error:
+      description: Request failed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    Email:
+      type: string
+      format: email
+    Password:
+      type: string
+      minLength: 6
+      maxLength: 72
+      writeOnly: true
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          $ref: "#/components/schemas/Email"
+        password:
+          $ref: "#/components/schemas/Password"
+    LoginResponse:
+      type: object
+      required:
+        - access_token_expires_in
+        - refresh_token_expires_in
+        - role
+      properties:
+        access_token_expires_in:
+          type: string
+          format: date-time
+        refresh_token_expires_in:
+          type: string
+          format: date-time
+        role:
+          type: string
+          enum: [citizen, councillor, office_member]
+    CurrentUser:
+      type: object
+      required: [id, name, email, role]
+      properties:
+        id: { type: integer, minimum: 1 }
+        name: { type: string }
+        email: { $ref: "#/components/schemas/Email" }
+        role:
+          type: string
+          enum: [citizen, councillor, office_member]
+        image_url: { type: string, format: uri }
+    RegisterBaseRequest:
+      type: object
+      required:
+        - name
+        - email
+        - password
+      properties:
+        name:
+          type: string
+          minLength: 1
+        email:
+          $ref: "#/components/schemas/Email"
+        password:
+          $ref: "#/components/schemas/Password"
+    RegisterBaseResponse:
+      type: object
+      required:
+        - name
+        - email
+      properties:
+        name:
+          type: string
+        email:
+          $ref: "#/components/schemas/Email"
+    RegisterCitizenRequest:
+      allOf:
+        - $ref: "#/components/schemas/RegisterBaseRequest"
+        - type: object
+          required:
+            - city
+            - state
+          properties:
+            city:
+              type: string
+              minLength: 1
+            state:
+              type: string
+              minLength: 2
+              maxLength: 2
+    RegisterCitizenResponse:
+      allOf:
+        - $ref: "#/components/schemas/RegisterBaseResponse"
+        - type: object
+          required:
+            - city
+            - state
+          properties:
+            city:
+              type: string
+            state:
+              type: string
+    RegisterCouncillorRequest:
+      allOf:
+        - $ref: "#/components/schemas/RegisterBaseRequest"
+        - type: object
+          required:
+            - party
+            - image_url
+            - city
+            - state
+          properties:
+            party:
+              type: string
+            image_url:
+              type: string
+            city:
+              type: string
+            state:
+              type: string
+              minLength: 2
+              maxLength: 2
+    RegisterCouncillorResponse:
+      allOf:
+        - $ref: "#/components/schemas/RegisterBaseResponse"
+        - type: object
+          required:
+            - image_url
+            - party
+            - city
+            - state
+          properties:
+            image_url:
+              type: string
+            party:
+              type: string
+            city:
+              type: string
+            state:
+              type: string
+    RegisterOfficeMemberRequest:
+      type: object
+      required:
+        - name
+        - password
+        - token
+        - image_url
+      properties:
+        name:
+          type: string
+        password:
+          $ref: "#/components/schemas/Password"
+        token:
+          type: string
+        image_url:
+          type: string
+    RegisterOfficeMemberResponse:
+      allOf:
+        - $ref: "#/components/schemas/RegisterBaseResponse"
+        - type: object
+          required:
+            - office_id
+            - image_url
+          properties:
+            office_id:
+              type: integer
+              minimum: 1
+            image_url:
+              type: string
+    OfficeMemberInvitation:
+      type: object
+      required:
+        - office_id
+        - councillor_name
+        - party
+        - image_url
+        - city
+        - state
+        - expires_at
+      properties:
+        office_id:
+          type: integer
+          minimum: 1
+        councillor_name:
+          type: string
+        party:
+          type: string
+        image_url:
+          type: string
+          format: uri
+        city:
+          type: string
+        state:
+          type: string
+          minLength: 2
+          maxLength: 2
+        expires_at:
+          type: string
+          format: date-time
+    DemandStatus:
+      type: string
+      enum:
+        - registered
+        - seen
+        - in_progress
+        - resolved
+    CreateDemandRequest:
+      type: object
+      required:
+        - title
+        - description
+        - category
+        - street
+        - neighborhood
+        - city
+        - state
+        - latitude
+        - longitude
+      properties:
+        title:
+          type: string
+          minLength: 5
+          maxLength: 120
+        description:
+          type: string
+          minLength: 10
+          maxLength: 1000
+        category:
+          type: string
+          minLength: 3
+          maxLength: 80
+        street:
+          type: string
+          minLength: 3
+          maxLength: 120
+        number:
+          type: string
+          maxLength: 20
+        neighborhood:
+          type: string
+          minLength: 2
+          maxLength: 120
+        city:
+          type: string
+          minLength: 2
+          maxLength: 120
+        state:
+          type: string
+          minLength: 2
+          maxLength: 2
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        images:
+          type: array
+          maxItems: 5
+          items: { type: string, format: uri }
+        directed_office_id:
+          type: integer
+          minimum: 1
+    Demand:
+      allOf:
+        - $ref: "#/components/schemas/CreateDemandRequest"
+        - type: object
+          required:
+            - id
+            - protocol
+            - status
+            - support_count
+            - comment_count
+            - created_at
+            - updated_at
+          properties:
+            id:
+              type: integer
+              minimum: 1
+            protocol:
+              type: string
+              example: CDD-20260829-A1B2C3
+            status:
+              $ref: "#/components/schemas/DemandStatus"
+            support_count:
+              type: integer
+              minimum: 0
+            comment_count:
+              type: integer
+              minimum: 0
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+    UpdateDemandStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status: { $ref: "#/components/schemas/DemandStatus" }
+    OfficeContact:
+      type: object
+      required: [type, value, position]
+      properties:
+        type: { type: string }
+        value: { type: string }
+        position: { type: integer, minimum: 0 }
+    PublicOffice:
+      type: object
+      required: [office_id, councillor_name, party, image_url, city, state, description, contacts, social_networks]
+      properties:
+        office_id: { type: integer, minimum: 1 }
+        councillor_name: { type: string }
+        party: { type: string }
+        image_url: { type: string, format: uri }
+        city: { type: string }
+        state: { type: string, minLength: 2, maxLength: 2 }
+        description: { type: string, maxLength: 1500 }
+        contacts:
+          type: array
+          maxItems: 10
+          items: { $ref: "#/components/schemas/OfficeContact" }
+        social_networks:
+          type: array
+          maxItems: 10
+          items: { $ref: "#/components/schemas/OfficeContact" }
+    OfficeMember:
+      type: object
+      required: [user_id, name, email, image_url]
+      properties:
+        user_id: { type: integer, minimum: 1 }
+        name: { type: string }
+        email: { $ref: "#/components/schemas/Email" }
+        image_url: { type: string, format: uri }
+    ManagedOffice:
+      allOf:
+        - $ref: "#/components/schemas/PublicOffice"
+        - type: object
+          required: [members]
+          properties:
+            members:
+              type: array
+              items: { $ref: "#/components/schemas/OfficeMember" }
+    OfficeMutationResponse:
+      type: object
+      required: [office_id, councillor_id, description, city, state, contacts, social_networks]
+      properties:
+        office_id: { type: integer, minimum: 1 }
+        councillor_id: { type: integer, minimum: 1 }
+        description: { type: string, maxLength: 1500 }
+        city: { type: string, minLength: 2, maxLength: 120 }
+        state: { type: string, minLength: 2, maxLength: 2 }
+        contacts:
+          type: array
+          items: { $ref: "#/components/schemas/OfficeContact" }
+        social_networks:
+          type: array
+          items: { $ref: "#/components/schemas/OfficeContact" }
+    OfficeCreateResponse:
+      type: object
+      required: [office_id, councillor_id, description, contacts, social_networks]
+      properties:
+        office_id: { type: integer, minimum: 1 }
+        councillor_id: { type: integer, minimum: 1 }
+        description: { type: string, maxLength: 1500 }
+        contacts:
+          type: array
+          items: { $ref: "#/components/schemas/OfficeContact" }
+        social_networks:
+          type: array
+          items: { $ref: "#/components/schemas/OfficeContact" }
+    OfficeCreateRequest:
+      type: object
+      properties:
+        description: { type: string, maxLength: 1500 }
+        contacts:
+          type: array
+          maxItems: 10
+          items: { $ref: "#/components/schemas/OfficeContact" }
+        social_networks:
+          type: array
+          maxItems: 10
+          items: { $ref: "#/components/schemas/OfficeContact" }
+    OfficeUpdateRequest:
+      type: object
+      required: [city, state]
+      properties:
+        description: { type: string, maxLength: 1500 }
+        city: { type: string, minLength: 2, maxLength: 120 }
+        state: { type: string, minLength: 2, maxLength: 2 }
+        contacts:
+          type: array
+          items: { $ref: "#/components/schemas/OfficeContact" }
+        social_networks:
+          type: array
+          items: { $ref: "#/components/schemas/OfficeContact" }
+    InviteOfficeMemberRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { $ref: "#/components/schemas/Email" }
+    InviteOfficeMemberResponse:
+      type: object
+      required: [email, expires_at]
+      properties:
+        email: { $ref: "#/components/schemas/Email" }
+        expires_at: { type: string, format: date-time }
+    OfficeMemberRequest:
+      type: object
+      required: [id, email, created_at, expires_at]
+      properties:
+        id: { type: integer, minimum: 1 }
+        email: { $ref: "#/components/schemas/Email" }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Stable application error code. Frontends should map this code to their own user-facing message.
+        message:
+          type: string
+        details:
+          description: Optional structured metadata intended for programmatic clients.

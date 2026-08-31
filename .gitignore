@@ -25,9 +25,8 @@ coverage.html
 testdata/tmp/
 testdata/output/
 
-# Go workspace
-go.work
-go.work.sum
+# Runtime processes managed by Make
+.runtime/
 
 # Environment / secrets
 .env
