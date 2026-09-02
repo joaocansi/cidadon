@@ -40,24 +40,31 @@ type Demand struct {
 }
 
 type DemandEvent struct {
-	ID          uint           `json:"id"`
-	DemandID    uint           `json:"demand_id"`
-	Type        string         `json:"type"`
-	ActorUserID *uint          `json:"actor_user_id,omitempty"`
-	Metadata    map[string]any `json:"metadata,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
+	ID            uint           `json:"id"`
+	DemandID      uint           `json:"demand_id"`
+	Type          string         `json:"type"`
+	ActorUserID   *uint          `json:"actor_user_id,omitempty"`
+	ActorName     string         `json:"actor_name,omitempty"`
+	ActorRole     UserRole       `json:"actor_role,omitempty"`
+	ActorImageURL string         `json:"actor_image_url,omitempty"`
+	Message       string         `json:"message,omitempty"`
+	Images        []string       `json:"images"`
+	Metadata      map[string]any `json:"-"`
+	CreatedAt     time.Time      `json:"created_at"`
 }
 type DemandComment struct {
-	ID         uint       `json:"id"`
-	DemandID   uint       `json:"demand_id"`
-	AuthorID   uint       `json:"author_id"`
-	AuthorName string     `json:"author_name"`
-	AuthorRole UserRole   `json:"author_role"`
-	Body       string     `json:"body"`
-	Images     []string   `json:"images"`
-	HiddenAt   *time.Time `json:"hidden_at,omitempty"`
-	Hidden     bool       `json:"hidden"`
-	CreatedAt  time.Time  `json:"created_at"`
+	ID             uint       `json:"id"`
+	DemandID       uint       `json:"demand_id"`
+	ParentID       *uint      `json:"parent_id,omitempty"`
+	AuthorID       uint       `json:"author_id"`
+	AuthorName     string     `json:"author_name"`
+	AuthorRole     UserRole   `json:"author_role"`
+	AuthorImageURL string     `json:"author_image_url,omitempty"`
+	Body           string     `json:"body"`
+	Images         []string   `json:"images"`
+	HiddenAt       *time.Time `json:"hidden_at,omitempty"`
+	Hidden         bool       `json:"hidden"`
+	CreatedAt      time.Time  `json:"created_at"`
 }
 
 type DemandAssignment struct {

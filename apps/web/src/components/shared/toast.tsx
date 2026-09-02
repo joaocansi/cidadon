@@ -37,7 +37,7 @@ export function Toaster() {
       role="status"
       aria-live="polite"
       className={cn(
-        "text-paper fixed bottom-7 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2.5 rounded-2xl px-5 py-3 text-sm font-semibold shadow-[0_14px_36px_-10px_rgba(0,0,0,0.4)] transition-all duration-300",
+        "text-paper fixed bottom-7 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-2.5 rounded-2xl px-5 py-3 text-sm font-semibold shadow-[0_14px_36px_-10px_rgba(0,0,0,0.4)] transition-all duration-300",
         toast?.variant === "error" ? "bg-destructive" : "bg-pine",
         toast ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-5 opacity-0",
       )}

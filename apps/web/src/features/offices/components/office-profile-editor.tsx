@@ -11,6 +11,7 @@ import {
 import type { FormEvent } from "react";
 
 import { FormField } from "@/components/shared/forms/form-field";
+import { PartySelect } from "@/components/shared/party-select";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,7 @@ import type { OfficeContact } from "@/lib/api";
 
 export function OfficeProfileEditor({
   description,
+  party,
   city,
   state,
   contacts,
@@ -26,6 +28,7 @@ export function OfficeProfileEditor({
   saving,
   errors,
   onDescriptionChange,
+  onPartyChange,
   onCityChange,
   onStateChange,
   onContactsChange,
@@ -33,13 +36,15 @@ export function OfficeProfileEditor({
   onSave,
 }: {
   description: string;
+  party: string;
   city: string;
   state: string;
   contacts: OfficeContact[];
   socials: OfficeContact[];
   saving: boolean;
-  errors?: { city?: string; state?: string };
+  errors?: { party?: string; city?: string; state?: string };
   onDescriptionChange: (value: string) => void;
+  onPartyChange: (value: string) => void;
   onCityChange: (value: string) => void;
   onStateChange: (value: string) => void;
   onContactsChange: (items: OfficeContact[]) => void;
@@ -82,6 +87,19 @@ export function OfficeProfileEditor({
                 />
               </FormField>
               <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_100px]">
+                <FormField
+                  id="office-party"
+                  label="Partido"
+                  error={errors?.party}
+                  className="sm:col-span-2"
+                >
+                  <PartySelect
+                    id="office-party"
+                    value={party}
+                    invalid={Boolean(errors?.party)}
+                    onChange={onPartyChange}
+                  />
+                </FormField>
                 <FormField id="office-city" label="Cidade de atuação" error={errors?.city}>
                   <Input
                     id="office-city"

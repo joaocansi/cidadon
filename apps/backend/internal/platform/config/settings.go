@@ -33,10 +33,22 @@ type RefreshTokenProvider struct {
 	Expiration time.Duration
 }
 
+type Media struct {
+	Driver            string
+	LocalDir          string
+	PublicBaseURL     string
+	S3Bucket          string
+	S3Region          string
+	S3Endpoint        string
+	S3AccessKeyID     string
+	S3SecretAccessKey string
+}
+
 type Settings struct {
 	JwtProvider          JwtProvider
 	RefreshTokenProvider RefreshTokenProvider
 	Database             Database
+	Media                Media
 }
 
 var Env Settings
@@ -45,10 +57,29 @@ func Load() error {
 	if err := godotenv.Load(); err != nil {
 		return err
 	}
+	setMediaDefaults()
 	if err := envconfig.InitWithOptions(&Env, envconfig.Options{AllOptional: false}); err != nil {
 		return err
 	}
 	return nil
+}
+
+func setMediaDefaults() {
+	defaults := map[string]string{
+		"MEDIA_DRIVER":               "local",
+		"MEDIA_LOCAL_DIR":            "../../.runtime/uploads",
+		"MEDIA_PUBLIC_BASE_URL":      "http://localhost:8080/media",
+		"MEDIA_S3_BUCKET":            "__unused__",
+		"MEDIA_S3_REGION":            "__unused__",
+		"MEDIA_S3_ENDPOINT":          "__unused__",
+		"MEDIA_S3_ACCESS_KEY_ID":     "__unused__",
+		"MEDIA_S3_SECRET_ACCESS_KEY": "__unused__",
+	}
+	for key, value := range defaults {
+		if current, found := os.LookupEnv(key); !found || current == "" {
+			_ = os.Setenv(key, value)
+		}
+	}
 }
 
 type RSA256Pair struct {

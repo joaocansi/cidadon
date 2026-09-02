@@ -15,11 +15,12 @@ import {
 } from "@/lib/api";
 import { apiErrorMessage } from "@/lib/forms";
 
-type ProfileErrors = { city?: string; state?: string };
+type ProfileErrors = { party?: string; city?: string; state?: string };
 
 export default function OfficeProfileSettingsPage() {
   const [office, setOffice] = useState<ManagedOffice | null>(null);
   const [description, setDescription] = useState("");
+  const [party, setParty] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
   const [contacts, setContacts] = useState<OfficeContact[]>([]);
@@ -31,6 +32,7 @@ export default function OfficeProfileSettingsPage() {
   function applyOffice(data: ManagedOffice) {
     setOffice(data);
     setDescription(data.description ?? "");
+    setParty(data.party ?? "");
     setCity(data.city ?? "");
     setState(data.state ?? "");
     setContacts(data.contacts ?? []);
@@ -64,6 +66,7 @@ export default function OfficeProfileSettingsPage() {
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextErrors: ProfileErrors = {};
+    if (!party.trim()) nextErrors.party = "Selecione um partido.";
     if (city.trim().length < 2) nextErrors.city = "Informe a cidade onde o gabinete atua.";
     if (!/^[A-Za-z]{2}$/.test(state.trim())) nextErrors.state = "Informe a UF com duas letras.";
     setErrors(nextErrors);
@@ -79,6 +82,7 @@ export default function OfficeProfileSettingsPage() {
 
     setSaving(true);
     const result = await apiUpdateOffice({
+      party,
       description: description.trim(),
       city: city.trim(),
       state: state.trim().toUpperCase(),
@@ -94,6 +98,7 @@ export default function OfficeProfileSettingsPage() {
       return;
     }
     setDescription(result.data.description);
+    setParty(result.data.party);
     setCity(result.data.city);
     setState(result.data.state);
     setContacts(result.data.contacts);
@@ -107,7 +112,7 @@ export default function OfficeProfileSettingsPage() {
       <DashboardShell
         title="Configurações do gabinete"
         subtitle="Atualize as informações que cidadãos veem ao procurar sua representação."
-        officeId={office?.office_id}
+        officeSlug={office?.slug}
       >
         {loading ? (
           <div className="text-ink-soft grid min-h-[60vh] place-items-center text-sm">
@@ -116,6 +121,7 @@ export default function OfficeProfileSettingsPage() {
         ) : (
           <OfficeProfileEditor
             description={description}
+            party={party}
             city={city}
             state={state}
             contacts={contacts}
@@ -123,6 +129,10 @@ export default function OfficeProfileSettingsPage() {
             saving={saving}
             errors={errors}
             onDescriptionChange={setDescription}
+            onPartyChange={(value) => {
+              setParty(value);
+              setErrors((current) => ({ ...current, party: undefined }));
+            }}
             onCityChange={(value) => {
               setCity(value);
               setErrors((current) => ({ ...current, city: undefined }));

@@ -10,6 +10,7 @@ import (
 type Office struct {
 	gorm.Model
 	CouncillorID   uint            `gorm:"uniqueIndex;not null"`
+	Slug           string          `gorm:"uniqueIndex"`
 	Councillor     *Councillor     `gorm:"foreignKey:CouncillorID;references:UserID"`
 	Description    string          `gorm:"type:text"`
 	Contacts       json.RawMessage `gorm:"type:jsonb"`
@@ -29,6 +30,7 @@ func (o *Office) ToDomain() *entity.Office {
 
 	return &entity.Office{
 		ID:             o.ID,
+		Slug:           o.Slug,
 		CouncillorID:   o.CouncillorID,
 		Councillor:     o.Councillor.ToDomain(),
 		Description:    o.Description,

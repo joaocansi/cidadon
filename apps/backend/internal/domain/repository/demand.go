@@ -39,5 +39,4 @@ type DemandRepository interface {
 	ListByCitizen(ctx context.Context, citizenID uint) ([]entity.Demand, error)
 	AssignOffices(ctx context.Context, demandID uint, officeIDs []uint) error
 	ListOfficeDemands(ctx context.Context, officeID uint, filters DemandFilters) ([]entity.Demand, error)
-	UpdateStatus(ctx context.Context, demandID, officeID uint, status entity.DemandStatus) (*entity.Demand, error)
 }

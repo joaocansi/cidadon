@@ -3,62 +3,99 @@
 import {
   ArrowLeftIcon,
   CalendarClockIcon,
+  FlagIcon,
+  HeartIcon,
   ImageIcon,
   Loader2Icon,
   MapPinIcon,
-  SendIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { CitizenShell } from "@/components/layout/citizen-shell";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
-import { FormField } from "@/components/shared/forms/form-field";
 import { showToast } from "@/components/shared/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RoleGate } from "@/features/auth/components/role-gate";
 import { useSession } from "@/features/auth/components/session-provider";
+import { DemandComments } from "@/features/demands/components/demand-comments";
+import { DemandImageGallery } from "@/features/demands/components/demand-image-gallery";
 import {
   DemandStatusBadge,
   getDemandStatusLabel,
 } from "@/features/demands/components/demand-status-badge";
+import { DemandTimeline } from "@/features/demands/components/demand-timeline";
 import {
-  apiCommentDemand,
+  DemandTransitionDialog,
+  type TimelinePayload,
+} from "@/features/demands/components/demand-transition-dialog";
+import {
+  apiAddDemandSupport,
+  apiCreateDemandMilestone,
   apiDemandAction,
   apiDemandActivity,
+  apiDemandSupport,
   apiGetDemand,
   apiGetManagedOffice,
   apiListOfficeDemands,
+  apiRemoveDemandSupport,
   type Demand,
   type DemandActivity,
+  type DemandSupport,
 } from "@/lib/api";
 import { apiErrorMessage } from "@/lib/forms";
 
-const eventLabel: Record<string, string> = {
-  created: "Demanda registrada",
-  claimed: "Gabinete assumiu o atendimento",
-  execution_started: "Execução iniciada",
-  confirmation_requested: "Validação solicitada ao cidadão",
-  confirmed: "Conclusão confirmada pelo cidadão",
-  reopened: "Demanda reaberta para nova análise",
-  comment_hidden: "Conteúdo moderado",
-  automatically_completed: "Concluída após o prazo de validação",
-  migrated: "Histórico migrado",
-};
 type Action = "claim" | "start" | "request-confirmation" | "confirm" | "reopen";
+type TimelineAction = Exclude<Action, "confirm"> | "milestone";
+
+const actionCopy: Record<
+  TimelineAction,
+  { title: string; description: string; submitLabel: string }
+> = {
+  claim: {
+    title: "Assumir atendimento",
+    description: "Registre como o gabinete iniciará a análise desta demanda.",
+    submitLabel: "Assumir demanda",
+  },
+  start: {
+    title: "Iniciar execução",
+    description: "Informe qual ação prática passou a ser executada pelo gabinete.",
+    submitLabel: "Iniciar execução",
+  },
+  "request-confirmation": {
+    title: "Solicitar validação",
+    description: "Explique a solução entregue para que a pessoa autora possa validar o resultado.",
+    submitLabel: "Solicitar validação",
+  },
+  reopen: {
+    title: "Reabrir demanda",
+    description:
+      "Descreva o que ainda não foi resolvido para que o gabinete possa revisar o atendimento.",
+    submitLabel: "Reabrir demanda",
+  },
+  milestone: {
+    title: "Novo marco",
+    description: "Publique uma atualização relevante sobre o andamento desta demanda.",
+    submitLabel: "Publicar marco",
+  },
+};
 
 export default function DemandDetailPage() {
   const { id: rawID } = useParams<{ id: string }>();
   const id = Number(rawID);
   const { user } = useSession();
+  const userID = user?.id;
   const staff = user?.role === "councillor" || user?.role === "office_member";
   const [demand, setDemand] = useState<Demand>();
   const [activity, setActivity] = useState<DemandActivity>();
   const [officeID, setOfficeID] = useState<number>();
+  const [officeSlug, setOfficeSlug] = useState<string>();
+  const [officeImageUrl, setOfficeImageUrl] = useState<string>();
   const [isAssigned, setIsAssigned] = useState(false);
-  const [body, setBody] = useState("");
+  const [support, setSupport] = useState<DemandSupport>();
+  const [pendingAction, setPendingAction] = useState<TimelineAction>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const load = useCallback(async () => {
@@ -77,72 +114,88 @@ export default function DemandDetailPage() {
     setLoading(false);
   }, [id]);
   useEffect(() => {
-    if (!id) return;
+    if (!id || !userID) return;
     const timeout = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timeout);
-  }, [id, load]);
+  }, [id, load, userID]);
   useEffect(() => {
     if (!staff) return;
     void Promise.all([apiGetManagedOffice(), apiListOfficeDemands()]).then(
       ([officeResult, demandsResult]) => {
-        if (officeResult.ok) setOfficeID(officeResult.data?.office_id);
+        if (officeResult.ok && officeResult.data) {
+          setOfficeID(officeResult.data.office_id);
+          setOfficeSlug(officeResult.data.slug);
+          setOfficeImageUrl(officeResult.data.image_url);
+        }
         if (demandsResult.ok)
           setIsAssigned((demandsResult.data ?? []).some((item) => item.id === id));
       },
     );
   }, [id, staff]);
+  useEffect(() => {
+    if (user?.role !== "citizen" || !id) return;
+    void apiDemandSupport(id).then((result) => {
+      if (result.ok) setSupport(result.data);
+    });
+  }, [id, user?.role]);
   const canAct =
     staff &&
     isAssigned &&
     (!demand?.responsible_office_id || demand.responsible_office_id === officeID);
-  const timeline = useMemo(
-    () =>
-      [
-        ...(activity?.events ?? []).map((item) => ({
-          kind: "event" as const,
-          id: item.id,
-          createdAt: item.created_at,
-          item,
-        })),
-        ...(activity?.comments ?? []).map((item) => ({
-          kind: "comment" as const,
-          id: item.id,
-          createdAt: item.created_at,
-          item,
-        })),
-      ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
-    [activity],
-  );
-  async function runAction(action: Action) {
-    const updateRequired = action === "request-confirmation" || action === "reopen";
-    if (updateRequired && !body.trim()) {
-      showToast("Escreva uma atualização antes de continuar.", "error");
-      return;
-    }
+  const isAuthor =
+    user?.role === "citizen" &&
+    activity?.events.find((event) => event.type === "created")?.actor_user_id === user.id;
+  async function runAction(action: Exclude<TimelineAction, "milestone">, payload: TimelinePayload) {
     setSaving(true);
-    const result = await apiDemandAction(id, action, updateRequired ? { body } : undefined);
+    const result = await apiDemandAction(id, action, {
+      message: payload.message,
+      images: payload.images,
+    });
     setSaving(false);
     if (!result.ok) {
       showToast(apiErrorMessage(result.error, "Não foi possível atualizar a demanda."), "error");
-      return;
+      return false;
     }
-    setBody("");
     showToast("Demanda atualizada com sucesso.");
     await load();
+    return true;
   }
-  async function comment(event: FormEvent) {
-    event.preventDefault();
-    if (!body.trim()) return;
+  async function publishMilestone(payload: TimelinePayload) {
     setSaving(true);
-    const result = await apiCommentDemand(id, { body });
+    const result = await apiCreateDemandMilestone(id, payload);
     setSaving(false);
     if (!result.ok) {
-      showToast(apiErrorMessage(result.error, "Não foi possível publicar o comentário."), "error");
+      showToast(apiErrorMessage(result.error, "Não foi possível publicar o marco."), "error");
+      return false;
+    }
+    showToast("Marco publicado com sucesso.");
+    await load();
+    return true;
+  }
+  async function confirmDemand() {
+    setSaving(true);
+    const result = await apiDemandAction(id, "confirm");
+    setSaving(false);
+    if (!result.ok) {
+      showToast(apiErrorMessage(result.error, "Não foi possível confirmar a conclusão."), "error");
       return;
     }
-    setBody("");
-    showToast("Comentário publicado.");
+    showToast("Conclusão confirmada. Obrigado pela validação.");
     await load();
+  }
+  async function toggleSupport() {
+    if (!support?.can_support) return;
+    setSaving(true);
+    const result = support.supported
+      ? await apiRemoveDemandSupport(id)
+      : await apiAddDemandSupport(id);
+    setSaving(false);
+    if (!result.ok) {
+      showToast(apiErrorMessage(result.error, "Não foi possível atualizar seu apoio."), "error");
+      return;
+    }
+    setSupport(result.data);
+    showToast(result.data?.supported ? "Você apoiou esta demanda." : "Seu apoio foi removido.");
   }
   const content =
     loading || !demand ? (
@@ -153,16 +206,16 @@ export default function DemandDetailPage() {
         </span>
       </div>
     ) : (
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-5">
           <Card className="border-line">
             <CardHeader className="border-line-soft border-b">
               <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
+                <div className="min-w-0">
                   <p className="text-ink-faint font-mono text-xs font-semibold">
                     {demand.protocol}
                   </p>
-                  <CardTitle className="font-display mt-2 max-w-3xl text-2xl leading-tight sm:text-3xl">
+                  <CardTitle className="font-display mt-2 max-w-3xl text-2xl leading-tight break-words sm:text-3xl">
                     {demand.title}
                   </CardTitle>
                 </div>
@@ -170,37 +223,43 @@ export default function DemandDetailPage() {
               </div>
             </CardHeader>
             <CardContent className="space-y-5">
-              <p className="text-ink-soft max-w-3xl text-[15px] leading-7">{demand.description}</p>
+              <p className="text-ink-soft max-w-3xl text-[15px] leading-7 break-words">
+                {demand.description}
+              </p>
               <div className="border-line-soft text-ink-soft grid gap-3 border-y py-4 text-sm sm:grid-cols-2">
-                <p className="flex gap-2">
+                <p className="flex min-w-0 gap-2">
                   <MapPinIcon className="text-lime-deep mt-0.5 size-4 shrink-0" />
-                  {[demand.street, demand.number, demand.neighborhood]
-                    .filter(Boolean)
-                    .join(", ")} · {demand.city}/{demand.state}
+                  <span className="min-w-0 break-words">
+                    {[demand.street, demand.number, demand.neighborhood].filter(Boolean).join(", ")}{" "}
+                    · {demand.city}/{demand.state}
+                  </span>
                 </p>
-                <p className="flex gap-2">
+                <p className="flex min-w-0 gap-2">
                   <CalendarClockIcon className="text-lime-deep mt-0.5 size-4 shrink-0" />
-                  Registrada em {new Date(demand.created_at).toLocaleDateString("pt-BR")}
+                  <span className="break-words">
+                    Registrada em {new Date(demand.created_at).toLocaleDateString("pt-BR")}
+                  </span>
                 </p>
               </div>
-              {demand.images.length ? (
+              <div className="text-ink-soft flex items-center gap-2 text-sm">
+                <HeartIcon className="text-lime-deep size-4" />
+                <span>
+                  <strong className="text-ink">
+                    {support?.support_count ?? demand.support_count}
+                  </strong>{" "}
+                  apoio{(support?.support_count ?? demand.support_count) === 1 ? "" : "s"}
+                </span>
+              </div>
+              {(demand.images ?? []).length ? (
                 <div>
                   <p className="mb-3 flex items-center gap-2 text-sm font-semibold">
                     <ImageIcon className="text-lime-deep size-4" />
                     Anexos da solicitação
                   </p>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {demand.images.map((image, index) => (
-                      // Local data URLs are intentionally rendered without Next image optimization.
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        key={image}
-                        src={image}
-                        alt={`Anexo ${index + 1}`}
-                        className="border-line aspect-video rounded-xl border object-cover"
-                      />
-                    ))}
-                  </div>
+                  <DemandImageGallery
+                    images={demand.images ?? []}
+                    altPrefix="Anexo da solicitação"
+                  />
                 </div>
               ) : null}
             </CardContent>
@@ -208,50 +267,23 @@ export default function DemandDetailPage() {
           <Card className="border-line">
             <CardHeader className="border-line-soft border-b">
               <p className="text-lime-deep text-xs font-semibold tracking-wide uppercase">
-                Registro auditável
+                Conversa pública
               </p>
-              <CardTitle className="font-display text-xl">Linha do tempo</CardTitle>
+              <CardTitle className="font-display text-xl">Comentários</CardTitle>
             </CardHeader>
-            <CardContent className="pt-1">
-              {timeline.length ? (
-                <ol className="before:bg-line relative space-y-1 before:absolute before:top-4 before:bottom-4 before:left-[7px] before:w-px">
-                  {timeline.map((entry) => (
-                    <li key={`${entry.kind}-${entry.id}`} className="relative py-3 pl-7">
-                      <span className="border-card bg-lime absolute top-5 left-0 size-[15px] rounded-full border-4" />
-                      {entry.kind === "event" ? (
-                        <>
-                          <p className="text-sm font-semibold">
-                            {eventLabel[entry.item.type] ?? "Atualização da demanda"}
-                          </p>
-                          <p className="text-ink-faint mt-1 text-xs">
-                            {new Date(entry.createdAt).toLocaleString("pt-BR")}
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <div className="bg-paper-2 rounded-xl px-4 py-3">
-                            <p className="text-sm font-semibold">{entry.item.author_name}</p>
-                            <p className="text-ink-soft mt-1 text-sm leading-6 whitespace-pre-wrap">
-                              {entry.item.hidden ? "Conteúdo moderado." : entry.item.body}
-                            </p>
-                          </div>
-                          <p className="text-ink-faint mt-1 text-xs">
-                            {new Date(entry.createdAt).toLocaleString("pt-BR")}
-                          </p>
-                        </>
-                      )}
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <p className="text-ink-soft py-6 text-sm">
-                  Ainda não há atualizações neste protocolo.
-                </p>
-              )}
+            <CardContent className="pt-5">
+              <DemandComments
+                demandID={id}
+                comments={activity?.comments ?? []}
+                currentUserID={user?.id}
+                userRole={user?.role}
+                officeImageUrl={officeImageUrl}
+                onPublished={load}
+              />
             </CardContent>
           </Card>
         </div>
-        <aside className="space-y-5 xl:sticky xl:top-22 xl:self-start">
+        <aside className="min-w-0 space-y-5 xl:sticky xl:top-22 xl:self-start">
           <Card className="border-line">
             <CardHeader className="border-line-soft border-b">
               <p className="text-lime-deep text-xs font-semibold tracking-wide uppercase">
@@ -263,39 +295,49 @@ export default function DemandDetailPage() {
               <ActionPanel
                 demand={demand}
                 canAct={canAct}
-                isAuthor={user?.role === "citizen"}
+                isAuthor={Boolean(isAuthor)}
                 saving={saving}
-                onAction={runAction}
+                onAction={(action) => {
+                  if (action === "confirm") void confirmDemand();
+                  else setPendingAction(action);
+                }}
               />
+              {canAct ? (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  disabled={saving}
+                  onClick={() => setPendingAction("milestone")}
+                >
+                  <FlagIcon />
+                  Novo marco
+                </Button>
+              ) : null}
+              {user?.role === "citizen" && support?.can_support ? (
+                <Button
+                  variant={support.supported ? "outline" : "secondary"}
+                  className="w-full"
+                  disabled={saving}
+                  onClick={() => void toggleSupport()}
+                >
+                  <HeartIcon className={support.supported ? "fill-current" : undefined} />
+                  {support.supported ? "Apoiado" : "Apoiar demanda"}
+                </Button>
+              ) : null}
               <p className="bg-paper-2 text-ink-soft rounded-lg px-3 py-2 text-xs leading-5">
                 As ações ficam disponíveis apenas para quem participa deste atendimento.
               </p>
             </CardContent>
           </Card>
-          <Card className="border-line">
+          <Card className="border-line max-h-[calc(100vh-22rem)] overflow-hidden">
             <CardHeader className="border-line-soft border-b">
-              <CardTitle>Adicionar atualização</CardTitle>
+              <p className="text-lime-deep text-xs font-semibold tracking-wide uppercase">
+                Registro auditável
+              </p>
+              <CardTitle className="font-display text-xl">Linha do tempo</CardTitle>
             </CardHeader>
-            <CardContent>
-              <form onSubmit={comment} className="space-y-3">
-                <FormField
-                  id="comment"
-                  label="Comentário público"
-                  hint="Pessoas autenticadas podem acompanhar."
-                >
-                  <textarea
-                    id="comment"
-                    value={body}
-                    onChange={(event) => setBody(event.target.value)}
-                    placeholder="Escreva uma atualização útil"
-                    className="field-textarea min-h-32"
-                  />
-                </FormField>
-                <Button type="submit" disabled={saving || !body.trim()} className="w-full">
-                  <SendIcon />
-                  Publicar comentário
-                </Button>
-              </form>
+            <CardContent className="max-h-[calc(100vh-30rem)] scrollbar-thin overflow-y-auto pt-1">
+              <DemandTimeline events={activity?.events ?? []} />
             </CardContent>
           </Card>
         </aside>
@@ -307,11 +349,11 @@ export default function DemandDetailPage() {
         <DashboardShell
           title="Demanda"
           subtitle="Histórico e ações do protocolo."
-          officeId={officeID}
+          officeSlug={officeSlug}
         >
           <div className="mb-5">
             <Link
-              href="/office"
+              href="/gabinete"
               className="text-ink-soft hover:text-ink inline-flex items-center gap-1.5 text-sm font-semibold"
             >
               <ArrowLeftIcon className="size-4" />
@@ -328,6 +370,19 @@ export default function DemandDetailPage() {
           {content}
         </CitizenShell>
       )}
+      {pendingAction ? (
+        <DemandTransitionDialog
+          open
+          title={actionCopy[pendingAction].title}
+          description={actionCopy[pendingAction].description}
+          submitLabel={actionCopy[pendingAction].submitLabel}
+          onClose={() => setPendingAction(undefined)}
+          onSubmit={(payload) => {
+            if (pendingAction === "milestone") return publishMilestone(payload);
+            return runAction(pendingAction, payload);
+          }}
+        />
+      ) : null}
     </RoleGate>
   );
 }

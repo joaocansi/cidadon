@@ -1,11 +1,12 @@
 "use client";
 
-import { CameraIcon, Loader2Icon, MapPinIcon, SendIcon } from "lucide-react";
+import { Loader2Icon, MapPinIcon, SendIcon } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { type ChangeEvent, type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
 import { FormField } from "@/components/shared/forms/form-field";
+import { ImageAttachmentPicker } from "@/components/shared/image-attachment-picker";
 import { showToast } from "@/components/shared/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,7 +49,6 @@ export function DemandCreateForm() {
     Array<{ office_id: number; councillor_name: string; party: string }>
   >([]);
   const [loading, setLoading] = useState(false);
-  const [readingImages, setReadingImages] = useState(false);
 
   useEffect(() => {
     const timeout = window.setTimeout(async () => {
@@ -69,25 +69,6 @@ export function DemandCreateForm() {
       [key]: "",
       ...(key === "latitude" || key === "longitude" ? { location: "" } : {}),
     }));
-  }
-
-  async function selectImages(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? []).slice(0, 5);
-    if (files.some((file) => !file.type.startsWith("image/") || file.size > 2 * 1024 * 1024)) {
-      setErrors((current) => ({ ...current, images: "Use até 5 imagens de no máximo 2 MB cada." }));
-      event.target.value = "";
-      return;
-    }
-    setReadingImages(true);
-    try {
-      const images = await Promise.all(files.map(readFile));
-      update("images", images);
-      setErrors((current) => ({ ...current, images: "" }));
-    } catch {
-      setErrors((current) => ({ ...current, images: "Não foi possível ler uma das imagens." }));
-    } finally {
-      setReadingImages(false);
-    }
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -121,7 +102,7 @@ export function DemandCreateForm() {
       return;
     }
     showToast(`Demanda registrada com sucesso. Protocolo ${result.data?.protocol}.`);
-    router.replace("/demands");
+    router.replace("/demandas");
   }
 
   return (
@@ -258,18 +239,11 @@ export function DemandCreateForm() {
               error={errors.images}
               hint="Até 5 imagens JPG, PNG ou WebP, com no máximo 2 MB cada."
             >
-              <div className="relative">
-                <CameraIcon className="text-ink-faint pointer-events-none absolute top-1/2 left-3 z-10 size-4 -translate-y-1/2" />
-                <Input
-                  id="images"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  multiple
-                  disabled={readingImages}
-                  className="h-10 pl-9 file:mr-2"
-                  onChange={(event) => void selectImages(event)}
-                />
-              </div>
+              <ImageAttachmentPicker
+                files={form.images ?? []}
+                disabled={loading}
+                onChange={(files) => update("images", files)}
+              />
             </FormField>
           </CardContent>
         </Card>
@@ -304,7 +278,7 @@ export function DemandCreateForm() {
               Ponto selecionado: {form.latitude.toFixed(5)}, {form.longitude.toFixed(5)}
             </p>
           ) : null}
-          <Button type="submit" disabled={loading || readingImages} className="h-11 w-full px-5">
+          <Button type="submit" disabled={loading} className="h-11 w-full px-5">
             {loading ? <Loader2Icon className="animate-spin" /> : <SendIcon />}
             {loading ? "Registrando…" : "Registrar demanda"}
           </Button>
@@ -312,13 +286,4 @@ export function DemandCreateForm() {
       </Card>
     </form>
   );
-}
-
-function readFile(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
 }

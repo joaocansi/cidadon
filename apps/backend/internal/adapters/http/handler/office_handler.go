@@ -150,12 +150,7 @@ func (ah *OfficeHandler) SearchPublic(c *gin.Context) {
 }
 
 func (ah *OfficeHandler) FindPublic(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		c.Error(service.InvalidInput("invalid office id"))
-		return
-	}
-	item, err := ah.OfficeService.FindPublic(c.Request.Context(), uint(id))
+	item, err := ah.OfficeService.FindPublic(c.Request.Context(), c.Param("slug"))
 	if err != nil {
 		c.Error(err)
 		return

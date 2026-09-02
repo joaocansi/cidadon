@@ -23,56 +23,44 @@ export function DashboardShell({
   title,
   subtitle,
   actions,
-  officeId,
+  officeSlug,
   children,
 }: {
   title: string;
   subtitle?: string;
   actions?: ReactNode;
-  officeId?: number;
+  officeSlug?: string;
   children: ReactNode;
 }) {
   const pathname = usePathname();
   const { user } = useSession();
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const navItems = [
-    { label: "Demandas", href: "/office", icon: ClipboardListIcon },
-    { label: "Acompanhamento", icon: Clock3Icon, pending: true },
+    { label: "Demandas", href: "/gabinete", icon: ClipboardListIcon },
+    { label: "Acompanhamento", href: "/gabinete/acompanhamento", icon: Clock3Icon },
     ...(user?.role === "councillor"
       ? [
-          { label: "Equipe", href: "/office/team", icon: UsersIcon },
-          { label: "Gabinete", href: "/office/profile", icon: Building2Icon },
+          { label: "Equipe", href: "/gabinete/equipe", icon: UsersIcon },
+          { label: "Gabinete", href: "/gabinete/perfil", icon: Building2Icon },
         ]
       : []),
     {
       label: "Perfil público",
-      href: officeId ? `/offices/${officeId}` : "/offices",
+      href: officeSlug ? `/gabinetes/${officeSlug}` : "/gabinetes",
       icon: Building2Icon,
     },
   ];
 
   const navigation = navItems.map((item) => {
     const href = item.href ?? "";
-    const active = href.startsWith("/offices")
-      ? pathname.startsWith("/offices")
-      : href === "/office"
-        ? pathname === "/office"
+    const active = href.startsWith("/gabinetes")
+      ? pathname.startsWith("/gabinetes")
+      : href === "/gabinete"
+        ? pathname === "/gabinete"
         : href.includes("#")
           ? false
           : pathname === href;
     const isPublicProfile = item.label === "Perfil público";
-    if (item.pending)
-      return (
-        <span
-          key={item.label}
-          aria-disabled="true"
-          className="text-paper/35 flex h-10 shrink-0 cursor-not-allowed items-center gap-2.5 rounded-xl px-3 text-sm font-semibold"
-        >
-          <item.icon className="size-4" />
-          {item.label}
-          <span className="ml-auto text-[10px] font-bold tracking-wide uppercase">Em breve</span>
-        </span>
-      );
     return (
       <Link
         key={item.label}
@@ -102,7 +90,7 @@ export function DashboardShell({
     <div className="bg-paper text-ink min-h-dvh lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
       <aside className="bg-pine text-paper hidden lg:sticky lg:top-0 lg:flex lg:h-dvh lg:flex-col">
         <div className="border-paper/10 border-b px-5 py-5">
-          <Link href="/office" className="inline-flex items-center gap-3">
+          <Link href="/gabinete" className="inline-flex items-center gap-3">
             <span className="bg-lime text-pine grid size-9 place-items-center rounded-xl">
               <ClipboardListIcon className="size-4" />
             </span>
@@ -168,7 +156,7 @@ export function DashboardShell({
             >
               <div className="border-paper/10 flex items-center justify-between border-b px-5 py-5">
                 <Link
-                  href="/office"
+                  href="/gabinete"
                   onClick={() => setMobileNavigationOpen(false)}
                   className="inline-flex items-center gap-3"
                 >

@@ -14,6 +14,7 @@ func RegisterNotifications(router *gin.Engine, middleware *http.AuthMiddleware, 
 	group.POST("/read", handler.ReadNotifications)
 	group.GET("/stream", handler.NotificationStream)
 	comments := router.Group("/comments")
+	comments.DELETE("/:commentId", middleware.AuthHandler(entity.CitizenUser, entity.CouncillorUser, entity.OfficeMemberUser), handler.DeleteComment)
 	comments.POST("/:commentId/report", middleware.AuthHandler(entity.CitizenUser, entity.CouncillorUser, entity.OfficeMemberUser), handler.ReportComment)
 	comments.POST("/:commentId/hide", middleware.AuthHandler(entity.CouncillorUser, entity.OfficeMemberUser), handler.HideComment)
 }

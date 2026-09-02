@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"cidadon/internal/adapters/external/provider"
 	service "cidadon/internal/application/contract"
+	"cidadon/internal/application/usecase"
 	"cidadon/internal/domain/entity"
 	"net/http"
 	"strconv"
@@ -13,12 +15,14 @@ import (
 type DemandHandler struct {
 	DemandService service.DemandService
 	OfficeService service.OfficeService
+	MediaService  *usecase.MediaService
 }
 
-func NewDemandHandler(demandService service.DemandService, officeService service.OfficeService) *DemandHandler {
+func NewDemandHandler(demandService service.DemandService, officeService service.OfficeService, mediaService *usecase.MediaService) *DemandHandler {
 	return &DemandHandler{
 		DemandService: demandService,
 		OfficeService: officeService,
+		MediaService:  mediaService,
 	}
 }
 
@@ -42,39 +46,9 @@ func (h *DemandHandler) ListForOffice(c *gin.Context) {
 	c.JSON(http.StatusOK, demands)
 }
 
-func (h *DemandHandler) UpdateStatus(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		c.Error(service.InvalidInput("invalid demand id"))
-		return
-	}
-	var input service.UpdateDemandStatusInput
-	if !bindRequest(c, &input) {
-		return
-	}
-	userID, ok := c.Get("userId")
-	if !ok {
-		c.Error(service.Unauthorized("not authorized"))
-		return
-	}
-	role := c.MustGet("userRole").(entity.UserRole)
-	officeID, err := h.OfficeService.ResolveOfficeID(c.Request.Context(), userID.(uint), role)
-	if err != nil {
-		c.Error(err)
-		return
-	}
-	demand, err := h.DemandService.UpdateStatus(c.Request.Context(), uint(id), officeID, input)
-	if err != nil {
-		c.Error(err)
-		return
-	}
-	c.JSON(http.StatusOK, demand)
-}
-
 func (h *DemandHandler) Create(c *gin.Context) {
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 15<<20)
 	var input service.CreateDemandInput
-	if !bindRequest(c, &input) {
+	if !bindMultipartRequest(c, &input) {
 		return
 	}
 
@@ -84,9 +58,15 @@ func (h *DemandHandler) Create(c *gin.Context) {
 		return
 	}
 	input.CitizenID = citizenID.(uint)
+	stored, ok := h.storeImages(c, "demands")
+	if !ok {
+		return
+	}
+	input.Images = usecase.MediaURLs(stored)
 
 	demand, err := h.DemandService.Create(c.Request.Context(), input)
 	if err != nil {
+		h.MediaService.DeleteAll(c.Request.Context(), stored)
 		c.Error(err)
 		return
 	}
@@ -156,19 +136,25 @@ func (h *DemandHandler) officeAction(c *gin.Context, action string) {
 		c.Error(e)
 		return
 	}
+	var input service.DemandTimelineInput
+	if !bindMultipartRequest(c, &input) {
+		return
+	}
+	stored, ok := h.storeImages(c, "timeline")
+	if !ok {
+		return
+	}
+	input.Images = usecase.MediaURLs(stored)
 	var out *service.DemandOutput
 	if action == "claim" {
-		out, e = h.DemandService.Claim(c.Request.Context(), uint(id), office, uid)
+		out, e = h.DemandService.Claim(c.Request.Context(), uint(id), office, uid, input)
 	} else if action == "start" {
-		out, e = h.DemandService.Start(c.Request.Context(), uint(id), office, uid)
+		out, e = h.DemandService.Start(c.Request.Context(), uint(id), office, uid, input)
 	} else {
-		var in service.DemandCommentInput
-		if !bindRequest(c, &in) {
-			return
-		}
-		out, e = h.DemandService.RequestConfirmation(c.Request.Context(), uint(id), office, uid, in)
+		out, e = h.DemandService.RequestConfirmation(c.Request.Context(), uint(id), office, uid, input)
 	}
 	if e != nil {
+		h.MediaService.DeleteAll(c.Request.Context(), stored)
 		c.Error(e)
 		return
 	}
@@ -185,13 +171,73 @@ func (h *DemandHandler) Confirm(c *gin.Context) {
 }
 func (h *DemandHandler) Reopen(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
-	var in service.DemandCommentInput
-	if !bindRequest(c, &in) {
+	var in service.DemandTimelineInput
+	if !bindMultipartRequest(c, &in) {
 		return
 	}
+	stored, ok := h.storeImages(c, "timeline")
+	if !ok {
+		return
+	}
+	in.Images = usecase.MediaURLs(stored)
 	out, e := h.DemandService.Reopen(c, uint(id), c.MustGet("userId").(uint), in)
 	if e != nil {
+		h.MediaService.DeleteAll(c.Request.Context(), stored)
 		c.Error(e)
+		return
+	}
+	c.JSON(http.StatusOK, out)
+}
+func (h *DemandHandler) CreateMilestone(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.Error(service.InvalidInput("invalid demand id"))
+		return
+	}
+	var input service.DemandTimelineInput
+	if !bindMultipartRequest(c, &input) {
+		return
+	}
+	stored, ok := h.storeImages(c, "timeline")
+	if !ok {
+		return
+	}
+	input.Images = usecase.MediaURLs(stored)
+	userID := c.MustGet("userId").(uint)
+	role := c.MustGet("userRole").(entity.UserRole)
+	officeID, err := h.OfficeService.ResolveOfficeID(c.Request.Context(), userID, role)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	if err := h.DemandService.CreateMilestone(c.Request.Context(), uint(id), officeID, userID, input); err != nil {
+		h.MediaService.DeleteAll(c.Request.Context(), stored)
+		c.Error(err)
+		return
+	}
+	c.Status(http.StatusCreated)
+}
+func (h *DemandHandler) Support(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.Error(service.InvalidInput("invalid demand id"))
+		return
+	}
+	citizenID := c.MustGet("userId").(uint)
+	var out *service.DemandSupportOutput
+	switch c.Request.Method {
+	case http.MethodGet:
+		out, err = h.DemandService.GetSupport(c.Request.Context(), uint(id), citizenID)
+	case http.MethodPut:
+		out, err = h.DemandService.AddSupport(c.Request.Context(), uint(id), citizenID)
+	case http.MethodDelete:
+		out, err = h.DemandService.RemoveSupport(c.Request.Context(), uint(id), citizenID)
+	default:
+		c.Error(service.InvalidInput("unsupported support action"))
+		return
+	}
+	if err != nil {
+		c.Error(err)
 		return
 	}
 	c.JSON(http.StatusOK, out)
@@ -199,15 +245,30 @@ func (h *DemandHandler) Reopen(c *gin.Context) {
 func (h *DemandHandler) Comment(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	var in service.DemandCommentInput
-	if !bindRequest(c, &in) {
+	if !bindMultipartRequest(c, &in) {
 		return
 	}
+	stored, ok := h.storeImages(c, "comments")
+	if !ok {
+		return
+	}
+	in.Images = usecase.MediaURLs(stored)
 	out, e := h.DemandService.Comment(c, uint(id), c.MustGet("userId").(uint), c.MustGet("userRole").(entity.UserRole), in)
 	if e != nil {
+		h.MediaService.DeleteAll(c.Request.Context(), stored)
 		c.Error(e)
 		return
 	}
 	c.JSON(http.StatusCreated, out)
+}
+
+func (h *DemandHandler) storeImages(c *gin.Context, prefix string) ([]provider.StoredMedia, bool) {
+	stored, err := h.MediaService.StoreFiles(c.Request.Context(), prefix, multipartFiles(c, "images"), 5)
+	if err != nil {
+		c.Error(err)
+		return nil, false
+	}
+	return stored, true
 }
 func (h *DemandHandler) Activity(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -241,6 +302,20 @@ func (h *DemandHandler) ReportComment(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
+
+func (h *DemandHandler) DeleteComment(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("commentId"), 10, 64)
+	if err != nil {
+		c.Error(service.InvalidInput("invalid comment id"))
+		return
+	}
+	if err := h.DemandService.DeleteComment(c.Request.Context(), uint(id), c.MustGet("userId").(uint)); err != nil {
+		c.Error(err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func (h *DemandHandler) HideComment(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("commentId"), 10, 64)
 	if err != nil {
@@ -283,27 +358,35 @@ func (h *DemandHandler) ReadNotifications(c *gin.Context) {
 }
 func (h *DemandHandler) NotificationStream(c *gin.Context) {
 	userID := c.MustGet("userId").(uint)
+	after := uint(0)
+	if rawAfter := c.Query("after"); rawAfter != "" {
+		parsed, err := strconv.ParseUint(rawAfter, 10, 64)
+		if err != nil {
+			c.Error(service.InvalidInput("invalid notifications cursor"))
+			return
+		}
+		after = uint(parsed)
+	}
 	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
+	c.Header("Cache-Control", "no-cache, no-transform")
+	c.Header("X-Accel-Buffering", "no")
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
 		return
 	}
-	seen := map[uint]bool{}
+	_, _ = c.Writer.WriteString(": connected\n\n")
+	flusher.Flush()
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 	for {
-		rows, err := h.DemandService.ListNotifications(c.Request.Context(), userID)
+		rows, err := h.DemandService.ListNotificationsAfter(c.Request.Context(), userID, after)
 		if err != nil {
 			return
 		}
 		for _, row := range rows {
-			if !seen[row.ID] {
-				seen[row.ID] = true
-				c.SSEvent("notification", row)
-				flusher.Flush()
-			}
+			c.SSEvent("notification", row)
+			after = row.ID
+			flusher.Flush()
 		}
 		select {
 		case <-c.Request.Context().Done():

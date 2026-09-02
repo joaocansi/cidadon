@@ -46,7 +46,11 @@ func (s *DemandLifecycleService) completeExpired(ctx context.Context, id uint, n
 		if err := tx.Model(&demand).Updates(map[string]any{"status": entity.DemandStatusCompleted, "confirmation_due_at": nil}).Error; err != nil {
 			return err
 		}
-		metadata, _ := json.Marshal(map[string]string{"reason": "confirmation_expired"})
+		metadata, _ := json.Marshal(map[string]string{
+			"reason":      "confirmation_expired",
+			"from_status": string(entity.DemandStatusAwaitingConfirmation),
+			"to_status":   string(entity.DemandStatusCompleted),
+		})
 		if err := tx.Create(&model.DemandEvent{DemandID: demand.ID, Type: "automatically_completed", Metadata: metadata}).Error; err != nil {
 			return err
 		}
@@ -68,6 +72,11 @@ func (s *DemandLifecycleService) notifyCompletion(tx *gorm.DB, demand model.Dema
 		userIDs = append(userIDs, councillorID)
 		userIDs = append(userIDs, memberIDs...)
 	}
+	var commenterIDs []uint
+	if err := tx.Table("demand_comments").Distinct("author_id").Where("demand_id = ?", demand.ID).Scan(&commenterIDs).Error; err != nil {
+		return err
+	}
+	userIDs = append(userIDs, commenterIDs...)
 	seen := map[uint]bool{}
 	notifications := make([]model.Notification, 0, len(userIDs))
 	for _, userID := range userIDs {

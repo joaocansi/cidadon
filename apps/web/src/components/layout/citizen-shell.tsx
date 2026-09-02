@@ -24,15 +24,15 @@ export function CitizenShell({
   const links =
     user?.role === "citizen"
       ? [
-          { href: "/demands", label: "Demandas", icon: ClipboardListIcon },
-          { href: "/offices", label: "Gabinetes", icon: Building2Icon },
+          { href: "/demandas", label: "Demandas", icon: ClipboardListIcon },
+          { href: "/gabinetes", label: "Gabinetes", icon: Building2Icon },
         ]
-      : [{ href: "/offices", label: "Gabinetes", icon: Building2Icon }];
-  const home = user?.role === "citizen" ? "/demands" : user ? "/office" : "/";
+      : [{ href: "/gabinetes", label: "Gabinetes", icon: Building2Icon }];
+  const home = user?.role === "citizen" ? "/demandas" : user ? "/gabinete" : "/";
   const eyebrow =
     user?.role === "citizen" ? "Área do cidadão" : user ? "Visão pública" : "Diretório público";
   return (
-    <div className="bg-paper text-ink min-h-screen">
+    <div className="bg-paper text-ink min-h-screen overflow-x-clip">
       <header className="border-line/80 bg-paper/92 sticky top-0 z-40 border-b backdrop-blur-xl">
         <div className="mx-auto flex h-14 max-w-[1440px] items-center justify-between gap-3 px-4 sm:h-16 sm:px-6 lg:px-8">
           <Link
@@ -63,7 +63,7 @@ export function CitizenShell({
             {user ? <NotificationBell /> : null}
             {user?.role === "citizen" ? (
               <Link
-                href="/demands/new"
+                href="/demandas/nova"
                 className="bg-pine text-paper inline-flex h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold"
               >
                 <PlusIcon className="size-4" />
@@ -71,14 +71,14 @@ export function CitizenShell({
               </Link>
             ) : user ? (
               <Link
-                href="/office"
+                href="/gabinete"
                 className="bg-pine text-paper inline-flex h-9 items-center rounded-lg px-3 text-sm font-semibold"
               >
                 Minha área
               </Link>
             ) : (
               <Link
-                href="/login"
+                href="/entrar"
                 className="bg-pine text-paper inline-flex h-9 items-center rounded-lg px-3 text-sm font-semibold"
               >
                 Entrar
@@ -88,7 +88,7 @@ export function CitizenShell({
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-[1440px] px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
+      <main className="mx-auto w-full max-w-[1440px] min-w-0 px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="text-lime-deep text-xs font-semibold tracking-wide uppercase">

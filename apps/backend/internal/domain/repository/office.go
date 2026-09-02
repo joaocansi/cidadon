@@ -7,12 +7,14 @@ import (
 
 type CreateOfficeData struct {
 	CouncillorID   uint
+	Slug           string
 	Description    string
 	Contacts       []entity.OfficeContact
 	SocialNetworks []entity.OfficeSocialNetwork
 }
 
 type UpdateOfficeData struct {
+	Slug           string
 	Description    string
 	Contacts       []entity.OfficeContact
 	SocialNetworks []entity.OfficeSocialNetwork
@@ -22,6 +24,7 @@ type OfficeRepository interface {
 	Create(context.Context, CreateOfficeData) (*entity.Office, error)
 	UpdateByCouncillorID(context.Context, uint, UpdateOfficeData) (*entity.Office, error)
 	FindByID(context.Context, uint) (*entity.Office, error)
+	FindBySlug(context.Context, string) (*entity.Office, error)
 	FindByCouncillorID(context.Context, uint) (*entity.Office, error)
 	ListByCityState(context.Context, string, string) ([]entity.Office, error)
 	ListActiveOfficeIDsNear(context.Context, float64, float64, float64, int) ([]uint, error)

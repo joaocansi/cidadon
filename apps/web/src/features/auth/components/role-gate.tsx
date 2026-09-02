@@ -11,9 +11,9 @@ export function RoleGate({ allowed, children }: { allowed: UserRole[]; children:
   const { user, status } = useSession();
   const allowedKey = allowed.join(",");
   useEffect(() => {
-    if (status === "anonymous") router.replace("/login");
+    if (status === "anonymous") router.replace("/entrar");
     else if (user && !allowedKey.split(",").includes(user.role))
-      router.replace(user.role === "citizen" ? "/demands" : "/office");
+      router.replace(user.role === "citizen" ? "/demandas" : "/gabinete");
   }, [allowedKey, router, status, user]);
   if (status === "loading" || !user || !allowed.includes(user.role))
     return (

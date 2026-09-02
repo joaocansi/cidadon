@@ -18,5 +18,5 @@ func RegisterOffice(router *gin.Engine, middleware *http.AuthMiddleware, handler
 	group.DELETE("/member-requests/:id", middleware.AuthHandler(entity.CouncillorUser), handler.CancelMemberRequest)
 	group.DELETE("/members/:id", middleware.AuthHandler(entity.CouncillorUser), handler.RemoveMember)
 	group.PUT("", middleware.AuthHandler(entity.CouncillorUser), handler.Update)
-	group.GET("/:id", handler.FindPublic)
+	group.GET("/:slug", handler.FindPublic)
 }

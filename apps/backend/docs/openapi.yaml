@@ -5,7 +5,23 @@ info:
   description: API contract for the Cidadon civic demand platform.
 servers:
   - url: http://localhost:8080
+externalDocs:
+  description: Referência interativa da API
+  url: http://localhost:8080/docs
 paths:
+  /parties:
+    get:
+      summary: List the official party catalogue used for councillor registrations
+      operationId: listParties
+      security: []
+      responses:
+        "200":
+          description: Official political parties from Câmara dos Deputados Open Data.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PoliticalParty" }
   /auth/login:
     post:
       summary: Login with email and password
@@ -35,19 +51,18 @@ paths:
           $ref: "#/components/responses/Error"
   /auth/me:
     get:
-      summary: Return the authenticated user's role for access routing
+      summary: Return the current browser session for access routing
       operationId: getCurrentUser
-      security:
-        - cookieAuth: []
+      security: []
       responses:
         "200":
-          description: Current authenticated user.
+          description: Current authenticated user, or null when the browser is anonymous.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CurrentUser"
-        "401":
-          $ref: "#/components/responses/Error"
+                anyOf:
+                  - $ref: "#/components/schemas/CurrentUser"
+                  - type: "null"
   /auth/logout:
     post:
       summary: Clear the current browser session
@@ -87,9 +102,9 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
-              $ref: "#/components/schemas/RegisterCouncillorRequest"
+              $ref: "#/components/schemas/RegisterCouncillorMultipartRequest"
       responses:
         "201":
           description: Councillor registered successfully.
@@ -109,9 +124,9 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
-              $ref: "#/components/schemas/RegisterOfficeMemberRequest"
+              $ref: "#/components/schemas/RegisterOfficeMemberMultipartRequest"
       responses:
         "201":
           description: Office member registered successfully.
@@ -178,9 +193,9 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
-              $ref: "#/components/schemas/CreateDemandRequest"
+              $ref: "#/components/schemas/CreateDemandMultipartRequest"
       responses:
         "201":
           description: Demand created successfully.
@@ -243,7 +258,7 @@ paths:
                   $ref: "#/components/schemas/Demand"
   /demands/{id}/activity:
     get:
-      summary: Immutable activity timeline and chronological comments
+      summary: Immutable audit timeline and threaded public comments
       operationId: demandActivity
       security:
         - cookieAuth: []
@@ -255,6 +270,10 @@ paths:
       responses:
         "200":
           description: Demand activity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemandActivity"
   /demands/{id}/comments:
     post:
       summary: Add a public authenticated comment with text and/or up to five images
@@ -262,7 +281,19 @@ paths:
       security: [{ cookieAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/DemandId"
-      responses: { "201": { description: Comment created } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/DemandCommentMultipartRequest"
+      responses:
+        "201":
+          description: Comment created. Replies are normalized to one reply level.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemandComment"
   /demands/{id}/claim:
     post:
       summary: Claim a registered demand; the claiming office becomes solely responsible
@@ -270,7 +301,32 @@ paths:
       security: [{ cookieAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/DemandId"
-      responses: { "200": { description: Demand moved to under review } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/DemandTimelineRequest" }
+      responses:
+        "200": { description: Demand moved to under review }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /comments/{commentId}:
+    delete:
+      summary: Delete an authored comment and its replies
+      operationId: deleteDemandComment
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "204": { description: Comment and direct replies deleted. }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /demands/{id}/start:
     post:
       summary: Start execution as the responsible office
@@ -278,7 +334,17 @@ paths:
       security: [{ cookieAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/DemandId"
-      responses: { "200": { description: Demand moved to in progress } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/DemandTimelineRequest" }
+      responses:
+        "200": { description: Demand moved to in progress }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /demands/{id}/request-confirmation:
     post:
       summary: Request author validation with a mandatory update
@@ -286,7 +352,17 @@ paths:
       security: [{ cookieAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/DemandId"
-      responses: { "200": { description: Demand awaits confirmation for 120 hours } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/DemandTimelineRequest" }
+      responses:
+        "200": { description: Demand awaits confirmation for 120 hours }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /demands/{id}/confirm:
     post:
       summary: Confirm completion as the demand author
@@ -294,7 +370,11 @@ paths:
       security: [{ cookieAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/DemandId"
-      responses: { "200": { description: Demand completed } }
+      responses:
+        "200": { description: Demand completed }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /demands/{id}/reopen:
     post:
       summary: Reopen as the demand author with a mandatory explanation
@@ -302,17 +382,101 @@ paths:
       security: [{ cookieAuth: [] }]
       parameters:
         - $ref: "#/components/parameters/DemandId"
-      responses: { "200": { description: Demand returned to under review } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/DemandTimelineRequest" }
+      responses:
+        "200": { description: Demand returned to under review }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /demands/{id}/milestones:
+    post:
+      summary: Publish an operational milestone as the responsible office
+      operationId: createDemandMilestone
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/DemandId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: "#/components/schemas/DemandTimelineRequest" }
+      responses:
+        "201": { description: Milestone recorded and participants notified. }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /demands/{id}/support:
+    get:
+      summary: Return the authenticated citizen's support state
+      operationId: getDemandSupport
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/DemandId"
+      responses:
+        "200":
+          description: Support state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DemandSupport" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      summary: Add the authenticated citizen's unique support
+      operationId: addDemandSupport
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/DemandId"
+      responses:
+        "200":
+          description: Support added or already present.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DemandSupport" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      summary: Remove the authenticated citizen's support
+      operationId: removeDemandSupport
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/DemandId"
+      responses:
+        "200":
+          description: Support removed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DemandSupport" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /notifications:
     get:
       summary: List persistent notifications for the current user
+      operationId: listNotifications
       security: [{ cookieAuth: [] }]
-      responses: { "200": { description: Notifications } }
+      responses:
+        "200": { description: Notifications }
+        "401": { $ref: "#/components/responses/Error" }
   /notifications/stream:
     get:
       summary: Authenticated SSE notification stream
+      operationId: streamNotifications
       security: [{ cookieAuth: [] }]
-      responses: { "200": { description: Server-sent notification events } }
+      parameters:
+        - name: after
+          in: query
+          description: Last notification ID observed by the client. Only higher IDs are streamed.
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200": { description: Server-sent notification events }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
   /office:
     get:
       summary: Search public office profiles by councillor name, party or region
@@ -383,16 +547,18 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
-  /office/{id}:
+  /office/{slug}:
     get:
       summary: Get a public office profile
       operationId: getOfficeProfile
       security: []
       parameters:
-        - name: id
+        - name: slug
           in: path
           required: true
-          schema: { type: integer, minimum: 1 }
+          schema:
+            type: string
+            pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$"
       responses:
         "200":
           description: Public office profile
@@ -629,6 +795,7 @@ components:
           properties:
             party:
               type: string
+              description: Official party acronym from GET /parties.
             image_url:
               type: string
             city:
@@ -655,22 +822,25 @@ components:
               type: string
             state:
               type: string
-    RegisterOfficeMemberRequest:
+    RegisterCouncillorMultipartRequest:
       type: object
-      required:
-        - name
-        - password
-        - token
-        - image_url
+      required: [name, email, password, party, city, state, photo]
       properties:
-        name:
-          type: string
-        password:
-          $ref: "#/components/schemas/Password"
-        token:
-          type: string
-        image_url:
-          type: string
+        name: { type: string }
+        email: { $ref: "#/components/schemas/Email" }
+        password: { $ref: "#/components/schemas/Password" }
+        party: { type: string, description: Official party acronym from GET /parties. }
+        city: { type: string }
+        state: { type: string, minLength: 2, maxLength: 2 }
+        photo: { type: string, format: binary, description: Cropped profile photo. }
+    RegisterOfficeMemberMultipartRequest:
+      type: object
+      required: [name, password, token, photo]
+      properties:
+        name: { type: string }
+        password: { $ref: "#/components/schemas/Password" }
+        token: { type: string }
+        photo: { type: string, format: binary, description: Cropped profile photo. }
     RegisterOfficeMemberResponse:
       allOf:
         - $ref: "#/components/schemas/RegisterBaseResponse"
@@ -780,6 +950,25 @@ components:
         directed_office_id:
           type: integer
           minimum: 1
+    CreateDemandMultipartRequest:
+      type: object
+      required: [title, description, category, street, neighborhood, city, state, latitude, longitude]
+      properties:
+        title: { type: string, minLength: 5, maxLength: 120 }
+        description: { type: string, minLength: 10, maxLength: 1000 }
+        category: { type: string, minLength: 3, maxLength: 80 }
+        street: { type: string, minLength: 3, maxLength: 120 }
+        number: { type: string, maxLength: 20 }
+        neighborhood: { type: string, minLength: 2, maxLength: 120 }
+        city: { type: string, minLength: 2, maxLength: 120 }
+        state: { type: string, minLength: 2, maxLength: 2 }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        directed_office_id: { type: integer, minimum: 1 }
+        images:
+          type: array
+          maxItems: 5
+          items: { type: string, format: binary }
     Demand:
       allOf:
         - $ref: "#/components/schemas/CreateDemandRequest"
@@ -813,11 +1002,6 @@ components:
             updated_at:
               type: string
               format: date-time
-    UpdateDemandStatusRequest:
-      type: object
-      required: [status]
-      properties:
-        status: { $ref: "#/components/schemas/DemandStatus" }
     OfficeContact:
       type: object
       required: [type, value, position]
@@ -827,9 +1011,10 @@ components:
         position: { type: integer, minimum: 0 }
     PublicOffice:
       type: object
-      required: [office_id, councillor_name, party, image_url, city, state, description, contacts, social_networks]
+      required: [office_id, slug, councillor_name, party, image_url, city, state, description, contacts, social_networks]
       properties:
         office_id: { type: integer, minimum: 1 }
+        slug: { type: string, example: partido-nome-do-vereador-42 }
         councillor_name: { type: string }
         party: { type: string }
         image_url: { type: string, format: uri }
@@ -863,10 +1048,12 @@ components:
               items: { $ref: "#/components/schemas/OfficeMember" }
     OfficeMutationResponse:
       type: object
-      required: [office_id, councillor_id, description, city, state, contacts, social_networks]
+      required: [office_id, councillor_id, slug, party, description, city, state, contacts, social_networks]
       properties:
         office_id: { type: integer, minimum: 1 }
         councillor_id: { type: integer, minimum: 1 }
+        slug: { type: string, example: pt-ana-martins-42 }
+        party: { type: string, example: PT }
         description: { type: string, maxLength: 1500 }
         city: { type: string, minLength: 2, maxLength: 120 }
         state: { type: string, minLength: 2, maxLength: 2 }
@@ -903,8 +1090,9 @@ components:
           items: { $ref: "#/components/schemas/OfficeContact" }
     OfficeUpdateRequest:
       type: object
-      required: [city, state]
+      required: [party, city, state]
       properties:
+        party: { type: string, description: Official party acronym, example: PT }
         description: { type: string, maxLength: 1500 }
         city: { type: string, minLength: 2, maxLength: 120 }
         state: { type: string, minLength: 2, maxLength: 2 }
@@ -914,6 +1102,14 @@ components:
         social_networks:
           type: array
           items: { $ref: "#/components/schemas/OfficeContact" }
+    PoliticalParty:
+      type: object
+      required: [id, sigla, nome, uri]
+      properties:
+        id: { type: integer, example: 36844 }
+        sigla: { type: string, example: PT }
+        nome: { type: string, example: Partido dos Trabalhadores }
+        uri: { type: string, format: uri, example: https://dadosabertos.camara.leg.br/api/v2/partidos/36844 }
     InviteOfficeMemberRequest:
       type: object
       required: [email]
@@ -946,3 +1142,78 @@ components:
           type: string
         details:
           description: Optional structured metadata intended for programmatic clients.
+    DemandCommentMultipartRequest:
+      type: object
+      properties:
+        body: { type: string, maxLength: 2000 }
+        parent_id: { type: integer, minimum: 1 }
+        images:
+          type: array
+          maxItems: 5
+          items: { type: string, format: binary }
+    DemandTimelineRequest:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 3
+          maxLength: 2000
+        images:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+            format: binary
+            description: JPG, PNG or WebP file up to 2 MB.
+    DemandSupport:
+      type: object
+      required: [support_count, supported, can_support]
+      properties:
+        support_count: { type: integer, minimum: 0 }
+        supported: { type: boolean }
+        can_support: { type: boolean }
+    DemandComment:
+      type: object
+      required: [id, demand_id, author_id, author_name, author_role, images, hidden, created_at]
+      properties:
+        id: { type: integer, minimum: 1 }
+        demand_id: { type: integer, minimum: 1 }
+        parent_id: { type: integer, minimum: 1 }
+        author_id: { type: integer, minimum: 1 }
+        author_name: { type: string }
+        author_role: { type: string, enum: [citizen, councillor, office_member] }
+        author_image_url: { type: string }
+        body: { type: string }
+        images:
+          type: array
+          items: { type: string }
+        hidden: { type: boolean }
+        hidden_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+    DemandEvent:
+      type: object
+      required: [id, demand_id, type, images, created_at]
+      properties:
+        id: { type: integer, minimum: 1 }
+        demand_id: { type: integer, minimum: 1 }
+        type: { type: string }
+        actor_user_id: { type: integer, minimum: 1 }
+        actor_name: { type: string }
+        actor_role: { type: string, enum: [citizen, councillor, office_member] }
+        actor_image_url: { type: string }
+        message: { type: string }
+        images:
+          type: array
+          items: { type: string }
+        created_at: { type: string, format: date-time }
+    DemandActivity:
+      type: object
+      required: [events, comments]
+      properties:
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/DemandEvent" }
+        comments:
+          type: array
+          items: { $ref: "#/components/schemas/DemandComment" }

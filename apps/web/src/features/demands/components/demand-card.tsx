@@ -58,7 +58,7 @@ export function DemandCard({ demand }: { demand: Demand }) {
           </span>
         </span>
         <Link
-          href={`/demands/${demand.id}`}
+          href={`/demandas/${demand.id}`}
           className="text-pine text-sm font-semibold hover:underline"
         >
           Ver detalhes

@@ -37,9 +37,9 @@ type LoginOutput struct {
 	Role                  entity.UserRole `json:"role"`
 }
 type RegisterBaseInput struct {
-	Name     string `json:"name" binding:"required,min=3,max=120"`
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,gte=6,lte=72"`
+	Name     string `json:"name" form:"name" binding:"required,min=3,max=120"`
+	Email    string `json:"email" form:"email" binding:"required,email"`
+	Password string `json:"password" form:"password" binding:"required,gte=6,lte=72"`
 }
 
 type RegisterBaseOutput struct {
@@ -49,8 +49,8 @@ type RegisterBaseOutput struct {
 
 type RegisterCitizenInput struct {
 	RegisterBaseInput
-	City  string `json:"city" binding:"required,min=2,max=120"`
-	State string `json:"state" binding:"required,len=2"`
+	City  string `json:"city" form:"city" binding:"required,min=2,max=120"`
+	State string `json:"state" form:"state" binding:"required,len=2"`
 }
 
 type RegisterCitizenOutput struct {
@@ -60,10 +60,10 @@ type RegisterCitizenOutput struct {
 }
 type RegisterCouncillorInput struct {
 	RegisterBaseInput
-	Party    string `json:"party" binding:"required,min=2,max=80"`
-	ImageURL string `json:"image_url" binding:"required,url,max=2048"`
-	City     string `json:"city" binding:"required,min=2,max=120"`
-	State    string `json:"state" binding:"required,len=2"`
+	Party    string `json:"party" form:"party" binding:"required,min=2,max=80"`
+	ImageURL string `json:"image_url" form:"-"`
+	City     string `json:"city" form:"city" binding:"required,min=2,max=120"`
+	State    string `json:"state" form:"state" binding:"required,len=2"`
 }
 
 type RegisterCouncillorOutput struct {
@@ -74,10 +74,10 @@ type RegisterCouncillorOutput struct {
 	State    string `json:"state"`
 }
 type RegisterOfficeMemberInput struct {
-	Name     string `json:"name" binding:"required,min=3,max=120"`
-	Password string `json:"password" binding:"required,gte=6,lte=72"`
-	Token    string `json:"token" binding:"required,min=32,max=256"`
-	ImageURL string `json:"image_url" binding:"required,url,max=2048"`
+	Name     string `json:"name" form:"name" binding:"required,min=3,max=120"`
+	Password string `json:"password" form:"password" binding:"required,gte=6,lte=72"`
+	Token    string `json:"token" form:"token" binding:"required,min=32,max=256"`
+	ImageURL string `json:"image_url" form:"-"`
 }
 
 type RegisterOfficeMemberOutput struct {

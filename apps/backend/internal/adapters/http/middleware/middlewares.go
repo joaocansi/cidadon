@@ -69,3 +69,29 @@ func (a *AuthMiddleware) AuthHandler(allowedRoles ...entity.UserRole) gin.Handle
 		return
 	}
 }
+
+// OptionalAuthHandler enriches the request with the authenticated subject when
+// a valid session exists. It deliberately treats a missing or expired cookie as
+// an anonymous request, which is useful for session discovery endpoints.
+func (a *AuthMiddleware) OptionalAuthHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		accessToken, err := c.Request.Cookie("accessToken")
+		if err != nil {
+			c.Next()
+			return
+		}
+
+		subject, err := a.JwtProvider.GetSubject(accessToken.Value)
+		if err != nil {
+			c.Next()
+			return
+		}
+
+		subjectAuth := entity.AuthSubject{}
+		if err := subjectAuth.FromString(subject); err == nil {
+			c.Set("userId", subjectAuth.UserID)
+			c.Set("userRole", subjectAuth.Role)
+		}
+		c.Next()
+	}
+}

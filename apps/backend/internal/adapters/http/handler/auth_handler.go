@@ -2,6 +2,7 @@ package handler
 
 import (
 	service "cidadon/internal/application/contract"
+	"cidadon/internal/application/usecase"
 	"net/http"
 	"time"
 
@@ -10,11 +11,13 @@ import (
 
 type Handler struct {
 	AuthService service.AuthService
+	Media       *usecase.MediaService
 }
 
-func NewAuthHandler(authService service.AuthService) *Handler {
+func NewAuthHandler(authService service.AuthService, media *usecase.MediaService) *Handler {
 	return &Handler{
 		AuthService: authService,
+		Media:       media,
 	}
 }
 
@@ -55,12 +58,23 @@ func (ah *Handler) RegisterCitizen(c *gin.Context) {
 
 func (ah *Handler) RegisterCouncillor(c *gin.Context) {
 	var registerInput service.RegisterCouncillorInput
-	if !bindRequest(c, &registerInput) {
+	if !bindMultipartRequest(c, &registerInput) {
 		return
 	}
+	stored, err := ah.Media.StoreFiles(c.Request.Context(), "avatars/councillors", multipartFiles(c, "photo"), 1)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	if len(stored) != 1 {
+		c.Error(service.InvalidInput("profile photo is required").WithDetails(map[string]any{"fields": []string{"photo"}}))
+		return
+	}
+	registerInput.ImageURL = stored[0].URL
 
 	councillor, err := ah.AuthService.RegisterCouncillor(c.Request.Context(), registerInput)
 	if err != nil {
+		ah.Media.DeleteAll(c.Request.Context(), stored)
 		c.Error(err)
 		return
 	}
@@ -70,12 +84,23 @@ func (ah *Handler) RegisterCouncillor(c *gin.Context) {
 
 func (ah *Handler) RegisterOfficeMember(c *gin.Context) {
 	var registerInput service.RegisterOfficeMemberInput
-	if !bindRequest(c, &registerInput) {
+	if !bindMultipartRequest(c, &registerInput) {
 		return
 	}
+	stored, err := ah.Media.StoreFiles(c.Request.Context(), "avatars/members", multipartFiles(c, "photo"), 1)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	if len(stored) != 1 {
+		c.Error(service.InvalidInput("profile photo is required").WithDetails(map[string]any{"fields": []string{"photo"}}))
+		return
+	}
+	registerInput.ImageURL = stored[0].URL
 
 	officeMember, err := ah.AuthService.RegisterOfficeMember(c.Request.Context(), registerInput)
 	if err != nil {
+		ah.Media.DeleteAll(c.Request.Context(), stored)
 		c.Error(err)
 		return
 	}
@@ -93,7 +118,11 @@ func (ah *Handler) PreviewOfficeMemberInvitation(c *gin.Context) {
 }
 
 func (ah *Handler) Me(c *gin.Context) {
-	userID, _ := c.Get("userId")
+	userID, authenticated := c.Get("userId")
+	if !authenticated {
+		c.JSON(http.StatusOK, nil)
+		return
+	}
 	user, err := ah.AuthService.CurrentUser(c.Request.Context(), userID.(uint))
 	if err != nil {
 		c.Error(err)

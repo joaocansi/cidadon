@@ -69,7 +69,7 @@ export type CreateDemandInput = {
   state: string;
   latitude: number;
   longitude: number;
-  images?: string[];
+  images?: File[];
   directed_office_id?: number;
 };
 
@@ -114,6 +114,31 @@ async function request<T>(
   }
 }
 
+async function requestMultipart<T>(path: string, form: FormData): Promise<ApiResponse<T>> {
+  try {
+    const res = await fetch(path, { method: "POST", body: form, credentials: "include" });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const code = (json as { code?: string }).code ?? "INTERNAL";
+      const details = (json as { details?: { fields?: string[] } }).details;
+      return { ok: false, error: new ApiError(code, details) };
+    }
+    return { ok: true, data: json as T };
+  } catch {
+    return { ok: false, error: new ApiError("NETWORK") };
+  }
+}
+
+function multipart(values: Record<string, string | number | File | File[] | undefined>) {
+  const form = new FormData();
+  Object.entries(values).forEach(([key, value]) => {
+    if (value === undefined) return;
+    if (Array.isArray(value)) return value.forEach((file) => form.append(key, file));
+    form.append(key, value instanceof File ? value : String(value));
+  });
+  return form;
+}
+
 export function apiLogin(email: string, password: string) {
   return request<LoginResponse>("/api/auth/login", {
     method: "POST",
@@ -128,7 +153,7 @@ export type CurrentUser = {
   image_url?: string;
 };
 export function apiMe() {
-  return request<CurrentUser>("/api/auth/me");
+  return request<CurrentUser | null>("/api/auth/me");
 }
 export function apiLogout() {
   return request<void>("/api/auth/logout", { method: "POST" });
@@ -158,29 +183,30 @@ export function apiRegisterCouncillor(input: {
   email: string;
   password: string;
   party: string;
-  image_url: string;
+  photo: File;
   city: string;
   state: string;
 }) {
-  return request<CitizenRegisterResponse>("/api/auth/register/councillor", {
-    method: "POST",
-    body: {
+  return requestMultipart<CitizenRegisterResponse>(
+    "/api/auth/register/councillor",
+    multipart({
       ...input,
       name: input.name.trim(),
       email: input.email.trim().toLowerCase(),
       party: input.party.trim(),
-      image_url: input.image_url.trim(),
       city: input.city.trim(),
       state: input.state.trim().toUpperCase(),
-    },
-  });
+    }),
+  );
+}
+
+export type PoliticalParty = { id: number; sigla: string; nome: string; uri: string };
+export function apiListParties() {
+  return request<PoliticalParty[]>("/api/parties");
 }
 
 export function apiCreateDemand(input: CreateDemandInput) {
-  return request<Demand>("/api/demands", {
-    method: "POST",
-    body: input,
-  });
+  return requestMultipart<Demand>("/api/demands", multipart(input));
 }
 
 export function apiListDemands(filters: DemandFilters = {}) {
@@ -203,22 +229,26 @@ export function apiListOfficeDemands(status?: DemandStatus) {
   return request<Demand[]>(`/api/demands/office${status ? `?status=${status}` : ""}`);
 }
 
-export function apiUpdateDemandStatus(id: number, status: DemandStatus) {
-  return request<Demand>(`/api/demands/${id}/status`, { method: "PATCH", body: { status } });
-}
 export type DemandEvent = {
   id: number;
   demand_id: number;
   type: string;
   actor_user_id?: number;
+  actor_name?: string;
+  actor_role?: UserRole;
+  actor_image_url?: string;
+  message?: string;
+  images: string[];
   created_at: string;
 };
 export type DemandComment = {
   id: number;
   demand_id: number;
+  parent_id?: number;
   author_id: number;
   author_name: string;
   author_role: UserRole;
+  author_image_url?: string;
   body: string;
   images: string[];
   hidden: boolean;
@@ -226,6 +256,11 @@ export type DemandComment = {
   created_at: string;
 };
 export type DemandActivity = { events: DemandEvent[]; comments: DemandComment[] };
+export type DemandSupport = {
+  support_count: number;
+  supported: boolean;
+  can_support: boolean;
+};
 export type Notification = {
   id: number;
   type: string;
@@ -242,12 +277,32 @@ export function apiDemandActivity(id: number) {
 export function apiDemandAction(
   id: number,
   action: "claim" | "start" | "request-confirmation" | "confirm" | "reopen",
-  body?: { body?: string; images?: string[] },
+  body?: { message?: string; images?: File[] },
 ) {
-  return request<Demand>(`/api/demands/${id}/${action}`, { method: "POST", body });
+  if (action === "confirm")
+    return request<Demand>(`/api/demands/${id}/${action}`, { method: "POST" });
+  return requestMultipart<Demand>(`/api/demands/${id}/${action}`, multipart(body ?? {}));
 }
-export function apiCommentDemand(id: number, body: { body?: string; images?: string[] }) {
-  return request<DemandComment>(`/api/demands/${id}/comments`, { method: "POST", body });
+export function apiCreateDemandMilestone(id: number, body: { message: string; images?: File[] }) {
+  return requestMultipart<void>(`/api/demands/${id}/milestones`, multipart(body));
+}
+export function apiDemandSupport(id: number) {
+  return request<DemandSupport>(`/api/demands/${id}/support`);
+}
+export function apiAddDemandSupport(id: number) {
+  return request<DemandSupport>(`/api/demands/${id}/support`, { method: "PUT" });
+}
+export function apiRemoveDemandSupport(id: number) {
+  return request<DemandSupport>(`/api/demands/${id}/support`, { method: "DELETE" });
+}
+export function apiCommentDemand(
+  id: number,
+  body: { body?: string; images?: File[]; parent_id?: number },
+) {
+  return requestMultipart<DemandComment>(`/api/demands/${id}/comments`, multipart(body));
+}
+export function apiDeleteComment(id: number) {
+  return request<void>(`/api/comments/${id}`, { method: "DELETE" });
 }
 export function apiReportComment(id: number, reason: string) {
   return request<void>(`/api/comments/${id}/report`, { method: "POST", body: { reason } });
@@ -266,6 +321,8 @@ export type OfficeContact = { type: string; value: string; position: number };
 export type OfficeProfile = {
   office_id: number;
   councillor_id: number;
+  slug: string;
+  party: string;
   description: string;
   city: string;
   state: string;
@@ -278,7 +335,10 @@ export type CreatedOffice = Pick<
 >;
 
 export function apiUpdateOffice(
-  input: Pick<OfficeProfile, "description" | "city" | "state" | "contacts" | "social_networks">,
+  input: Pick<
+    OfficeProfile,
+    "party" | "description" | "city" | "state" | "contacts" | "social_networks"
+  >,
 ) {
   return request<OfficeProfile>("/api/office", { method: "PUT", body: input });
 }
@@ -326,6 +386,7 @@ export function apiListOffices(city: string, state: string) {
 
 export type PublicOffice = {
   office_id: number;
+  slug: string;
   councillor_name: string;
   party: string;
   image_url: string;
@@ -342,19 +403,19 @@ export function apiSearchOffices(filters: { q?: string; city?: string; state?: s
   });
   return request<PublicOffice[]>(`/api/office${search.size ? `?${search}` : ""}`);
 }
-export function apiGetOffice(id: string) {
-  return request<PublicOffice>(`/api/office/${id}`);
+export function apiGetOffice(slug: string) {
+  return request<PublicOffice>(`/api/office/${encodeURIComponent(slug)}`);
 }
 
 export function apiRegisterOfficeMember(input: {
   token: string;
   name: string;
   password: string;
-  image_url: string;
+  photo: File;
 }) {
-  return request<{ name: string; email: string; office_id: number; image_url: string }>(
+  return requestMultipart<{ name: string; email: string; office_id: number; image_url: string }>(
     "/api/auth/register/office-member",
-    { method: "POST", body: input },
+    multipart(input),
   );
 }
 export type OfficeMemberInvitation = {

@@ -178,9 +178,13 @@ func (as *AuthServiceImpl) RegisterCitizen(ctx context.Context, input service.Re
 }
 
 func (as *AuthServiceImpl) RegisterCouncillor(ctx context.Context, input service.RegisterCouncillorInput) (*service.RegisterCouncillorOutput, error) {
+	party, validParty := entity.OfficialParty(input.Party)
+	if !validParty {
+		return nil, service.InvalidInput("party must be in the official catalogue").WithDetails(map[string]any{"fields": []string{"party"}})
+	}
 	hashedPassword := as.cryptoProvider.Hash(input.Password)
 	createCouncillorData := repository.CreateCouncillorData{
-		Party:    strings.TrimSpace(input.Party),
+		Party:    party.Acronym,
 		Name:     strings.TrimSpace(input.Name),
 		Email:    normalizeEmail(input.Email),
 		Password: hashedPassword,

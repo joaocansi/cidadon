@@ -66,7 +66,6 @@ export default function OfficePage() {
       }
       const items = demandResult.data ?? [];
       setDemands(items);
-      setSelected(items[0]);
     });
     return () => {
       active = false;
@@ -81,7 +80,7 @@ export default function OfficePage() {
       <DashboardShell
         title={office ? `Gabinete ${office.councillor_name}` : "Painel do gabinete"}
         subtitle="Acompanhe a região e avance as demandas com clareza."
-        officeId={office?.office_id}
+        officeSlug={office?.slug}
       >
         {loading ? (
           <div className="text-ink-soft grid min-h-[60vh] place-items-center text-sm">

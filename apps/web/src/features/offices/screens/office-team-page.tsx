@@ -147,7 +147,7 @@ export default function OfficeTeamPage() {
       <DashboardShell
         title="Equipe do gabinete"
         subtitle="Gerencie pessoas que podem atuar nas demandas e os convites em aberto."
-        officeId={office?.office_id}
+        officeSlug={office?.slug}
       >
         {loading ? (
           <div className="text-ink-soft grid min-h-[60vh] place-items-center text-sm">

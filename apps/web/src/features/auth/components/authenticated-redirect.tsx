@@ -5,7 +5,7 @@ import { type ReactNode, useEffect } from "react";
 
 import { useSession } from "@/features/auth/components/session-provider";
 
-const destination = (role: string) => (role === "citizen" ? "/demands" : "/office");
+const destination = (role: string) => (role === "citizen" ? "/demandas" : "/gabinete");
 
 export function AuthenticatedRedirect({ children }: { children: ReactNode }) {
   const router = useRouter();

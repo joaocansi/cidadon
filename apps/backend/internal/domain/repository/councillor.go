@@ -16,6 +16,7 @@ type CreateCouncillorData struct {
 }
 
 type UpdateCouncillorData struct {
+	Party string
 	City  string
 	State string
 }

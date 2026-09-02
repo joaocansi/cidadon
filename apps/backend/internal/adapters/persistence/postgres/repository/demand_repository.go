@@ -80,25 +80,6 @@ func (r *DemandRepositoryImpl) ListOfficeDemands(ctx context.Context, officeID u
 	return result, nil
 }
 
-func (r *DemandRepositoryImpl) UpdateStatus(ctx context.Context, demandID, officeID uint, status entity.DemandStatus) (*entity.Demand, error) {
-	var assignment model.DemandAssignment
-	if err := r.GetDB(ctx).Where("demand_id = ? AND office_id = ?", demandID, officeID).First(&assignment).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, repository.NewDBError(repository.DBErrorNotFound, err)
-		}
-		return nil, repository.NewDBError(repository.DBErrorInternal, err)
-	}
-	var demand model.Demand
-	if err := r.GetDB(ctx).First(&demand, demandID).Error; err != nil {
-		return nil, repository.NewDBError(repository.DBErrorInternal, err)
-	}
-	if err := r.GetDB(ctx).Model(&demand).Update("status", string(status)).Error; err != nil {
-		return nil, repository.NewDBError(repository.DBErrorInternal, err)
-	}
-	demand.Status = string(status)
-	return demand.ToDomain(), nil
-}
-
 func (r *DemandRepositoryImpl) FindByID(ctx context.Context, id uint) (*entity.Demand, error) {
 	var demandModel model.Demand
 	if err := r.GetDB(ctx).First(&demandModel, "id = ?", id).Error; err != nil {

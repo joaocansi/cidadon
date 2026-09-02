@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { showToast } from "@/components/shared/toast";
+import { useSession } from "@/features/auth/components/session-provider";
 import { apiNotifications, apiReadNotifications, type Notification } from "@/lib/api";
 
 const copy: Record<string, string> = {
@@ -16,29 +17,50 @@ const copy: Record<string, string> = {
   demand_reopened: "Uma demanda foi reaberta",
   demand_commented: "Há uma nova atualização",
   demand_automatically_completed: "Uma demanda foi concluída pelo prazo",
+  demand_milestone: "O gabinete publicou um novo marco",
 };
 export function NotificationBell() {
+  const { status, user } = useSession();
   const [items, setItems] = useState<Notification[]>([]);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const knownIDs = useRef(new Set<number>());
+  const latestID = useRef(0);
   useEffect(() => {
+    if (status !== "authenticated" || !user) return;
     let active = true;
-    void apiNotifications().then((result) => {
-      if (active && result.ok) setItems(result.data ?? []);
-    });
-    const stream = new EventSource("/api/notifications/stream");
-    stream.addEventListener("notification", (event) => {
-      const next = JSON.parse(event.data) as Notification;
-      setItems((current) =>
-        current.some((item) => item.id === next.id) ? current : [next, ...current],
-      );
-      showToast(copy[next.type] ?? "Há uma atualização em uma demanda.");
-    });
+    let stream: EventSource | undefined;
+    void (async () => {
+      const result = await apiNotifications();
+      if (!active) return;
+      const initial = result.ok ? (result.data ?? []) : [];
+      knownIDs.current = new Set(initial.map((item) => item.id));
+      latestID.current = initial.reduce((latest, item) => Math.max(latest, item.id), 0);
+      setItems(initial);
+
+      stream = new EventSource(`/api/notifications/stream?after=${latestID.current}`);
+      stream.addEventListener("notification", (event) => {
+        try {
+          const next = JSON.parse(event.data) as Notification;
+          if (knownIDs.current.has(next.id)) return;
+          knownIDs.current.add(next.id);
+          latestID.current = Math.max(latestID.current, next.id);
+          setItems((current) => [next, ...current]);
+          showToast(copy[next.type] ?? "Há uma atualização em uma demanda.");
+        } catch {
+          // Invalid stream payloads should not interrupt the authenticated UI.
+        }
+      });
+      stream.addEventListener("error", () => {
+        // EventSource reconnects by itself. Previously seen notification IDs are
+        // kept across reconnects, so a replay can never show a duplicate toast.
+      });
+    })();
     return () => {
       active = false;
-      stream.close();
+      stream?.close();
     };
-  }, []);
+  }, [status, user]);
   useEffect(() => {
     const close = (event: MouseEvent) => {
       if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
@@ -95,7 +117,7 @@ export function NotificationBell() {
               items.slice(0, 10).map((item) => (
                 <Link
                   key={item.id}
-                  href={`/demands/${item.demand_id}`}
+                  href={`/demandas/${item.demand_id}`}
                   onClick={() => setOpen(false)}
                   className={`border-line-soft hover:bg-paper-2 block border-b px-4 py-3 transition ${item.read_at ? "" : "bg-lime-pale/35"}`}
                 >

@@ -105,7 +105,7 @@ export default function RegisterPage() {
               </p>
             </div>
             <Link
-              href="/login"
+              href="/entrar"
               className="bg-primary text-primary-foreground hover:bg-primary/80 inline-flex h-12 w-full items-center justify-center rounded-full px-6 text-[15px] font-medium transition-all"
             >
               Entrar na conta
@@ -246,7 +246,7 @@ export default function RegisterPage() {
 
             <p className="text-ink-soft text-center text-[14px] sm:col-span-2">
               Já tem uma conta?{" "}
-              <Link href="/login" className="text-lime-deep hover:text-pine font-semibold">
+              <Link href="/entrar" className="text-lime-deep hover:text-pine font-semibold">
                 Entrar
               </Link>
             </p>

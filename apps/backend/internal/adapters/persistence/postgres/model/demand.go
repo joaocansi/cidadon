@@ -43,6 +43,7 @@ type DemandEvent struct {
 type DemandComment struct {
 	gorm.Model
 	DemandID       uint            `gorm:"not null;index"`
+	ParentID       *uint           `gorm:"index"`
 	AuthorID       uint            `gorm:"not null;index"`
 	Body           string          `gorm:"type:text"`
 	Images         json.RawMessage `gorm:"type:jsonb;not null;default:'[]'"`
@@ -70,6 +71,14 @@ type DemandAssignment struct {
 	OfficeID uint `gorm:"not null;uniqueIndex:idx_demand_office;index"`
 }
 
+// DemandSupport is intentionally a small join model. The composite uniqueness
+// constraint makes a citizen's support idempotent even under concurrent calls.
+type DemandSupport struct {
+	gorm.Model
+	DemandID  uint `gorm:"not null;uniqueIndex:idx_demand_support;index"`
+	CitizenID uint `gorm:"not null;uniqueIndex:idx_demand_support;index"`
+}
+
 func (d *Demand) ToDomain() *entity.Demand {
 	if d == nil {
 		return nil
@@ -77,6 +86,9 @@ func (d *Demand) ToDomain() *entity.Demand {
 
 	images := make([]string, 0)
 	_ = json.Unmarshal(d.Images, &images)
+	if images == nil {
+		images = []string{}
+	}
 	return &entity.Demand{
 		ID:           d.ID,
 		Protocol:     d.Protocol,

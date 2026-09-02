@@ -65,7 +65,7 @@ func (s *OfficeServiceImpl) InviteMember(ctx context.Context, userID uint, input
 		}
 		return nil, service.Internal(err)
 	}
-	inviteURL := fmt.Sprintf("%s/register/member?token=%s", frontendURL(), token.Value)
+	inviteURL := fmt.Sprintf("%s/cadastro/membro?token=%s", frontendURL(), token.Value)
 	invitation := provider.OfficeInvitation{
 		CouncillorName: councillor.User.Name,
 		Party:          councillor.Party,
@@ -129,8 +129,8 @@ func (s *OfficeServiceImpl) SearchPublic(ctx context.Context, query, city, state
 	return result, nil
 }
 
-func (s *OfficeServiceImpl) FindPublic(ctx context.Context, id uint) (*service.PublicOfficeOutput, error) {
-	office, err := s.officeRepo.FindByID(ctx, id)
+func (s *OfficeServiceImpl) FindPublic(ctx context.Context, slug string) (*service.PublicOfficeOutput, error) {
+	office, err := s.officeRepo.FindBySlug(ctx, strings.TrimSpace(slug))
 	if err != nil {
 		var dbErr *repository.DBError
 		if errors.As(err, &dbErr) && dbErr.Code == repository.DBErrorNotFound {
@@ -238,7 +238,7 @@ func (s *OfficeServiceImpl) RemoveMember(ctx context.Context, councillorID, memb
 }
 
 func publicOfficeOutput(office entity.Office) service.PublicOfficeOutput {
-	result := service.PublicOfficeOutput{OfficeID: office.ID, Description: office.Description, Contacts: office.Contacts, SocialNetworks: office.SocialNetworks}
+	result := service.PublicOfficeOutput{OfficeID: office.ID, Slug: office.Slug, Description: office.Description, Contacts: office.Contacts, SocialNetworks: office.SocialNetworks}
 	if office.Councillor != nil {
 		result.Party = office.Councillor.Party
 		result.ImageURL = office.Councillor.ImageURL
@@ -282,8 +282,17 @@ func frontendURL() string {
 }
 
 func (s *OfficeServiceImpl) Create(ctx context.Context, input service.CreateOfficeInput) (*service.CreateOfficeOutput, error) {
+	councillor, err := s.councillorRepo.FindByUserID(ctx, input.CouncillorID)
+	if err != nil {
+		return nil, officeNotFoundOrInternal(err)
+	}
+	councillorName := ""
+	if councillor.User != nil {
+		councillorName = councillor.User.Name
+	}
 	createOfficeData := repository.CreateOfficeData{
 		CouncillorID:   input.CouncillorID,
+		Slug:           entity.OfficeSlug(councillor.Party, councillorName, input.CouncillorID),
 		Description:    strings.TrimSpace(input.Description),
 		Contacts:       normalizeContacts(input.Contacts),
 		SocialNetworks: normalizeSocialNetworks(input.SocialNetworks),
@@ -312,11 +321,24 @@ func (s *OfficeServiceImpl) Create(ctx context.Context, input service.CreateOffi
 }
 
 func (s *OfficeServiceImpl) Update(ctx context.Context, input service.UpdateOfficeInput) (*service.UpdateOfficeOutput, error) {
+	party, validParty := entity.OfficialParty(input.Party)
+	if !validParty {
+		return nil, service.InvalidInput("party must be in the official catalogue").WithDetails(map[string]any{"fields": []string{"party"}})
+	}
 	var updatedOffice *entity.Office
 	var updatedCouncillor *entity.Councillor
 	err := s.transactionManager.WithTransaction(ctx, func(txCtx context.Context) error {
 		var updateErr error
+		councillor, councillorErr := s.councillorRepo.FindByUserID(txCtx, input.CouncillorID)
+		if councillorErr != nil {
+			return officeNotFoundOrInternal(councillorErr)
+		}
+		councillorName := ""
+		if councillor.User != nil {
+			councillorName = councillor.User.Name
+		}
 		updatedOffice, updateErr = s.officeRepo.UpdateByCouncillorID(txCtx, input.CouncillorID, repository.UpdateOfficeData{
+			Slug:           entity.OfficeSlug(party.Acronym, councillorName, input.CouncillorID),
 			Description:    strings.TrimSpace(input.Description),
 			Contacts:       normalizeContacts(input.Contacts),
 			SocialNetworks: normalizeSocialNetworks(input.SocialNetworks),
@@ -325,6 +347,7 @@ func (s *OfficeServiceImpl) Update(ctx context.Context, input service.UpdateOffi
 			return officeNotFoundOrInternal(updateErr)
 		}
 		updatedCouncillor, updateErr = s.councillorRepo.UpdateByUserID(txCtx, input.CouncillorID, repository.UpdateCouncillorData{
+			Party: party.Acronym,
 			City:  strings.TrimSpace(input.City),
 			State: strings.ToUpper(strings.TrimSpace(input.State)),
 		})
@@ -339,6 +362,8 @@ func (s *OfficeServiceImpl) Update(ctx context.Context, input service.UpdateOffi
 	return &service.UpdateOfficeOutput{
 		OfficeID:       updatedOffice.ID,
 		CouncillorID:   updatedOffice.CouncillorID,
+		Slug:           updatedOffice.Slug,
+		Party:          updatedCouncillor.Party,
 		Description:    updatedOffice.Description,
 		City:           updatedCouncillor.City,
 		State:          updatedCouncillor.State,

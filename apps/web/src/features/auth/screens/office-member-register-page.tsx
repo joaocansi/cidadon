@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { type FormEvent, Suspense, useEffect, useState } from "react";
 
+import { AvatarCropInput } from "@/components/shared/avatar-crop-input";
 import { FormField } from "@/components/shared/forms/form-field";
 import { showToast } from "@/components/shared/toast";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -35,7 +36,12 @@ export default function RegisterMemberPage() {
 
 function MemberRegistration() {
   const token = useSearchParams().get("token") ?? "";
-  const [form, setForm] = useState({ name: "", image_url: "", password: "", confirmPassword: "" });
+  const [form, setForm] = useState({
+    name: "",
+    photo: null as File | null,
+    password: "",
+    confirmPassword: "",
+  });
   const [errors, setErrors] = useState<FieldErrors>({});
   const [invitation, setInvitation] = useState<OfficeMemberInvitation | null>(null);
   const [invitationIssue, setInvitationIssue] = useState<"invalid" | "unavailable" | null>(null);
@@ -87,7 +93,7 @@ function MemberRegistration() {
     };
   }, [token]);
 
-  function update(field: keyof typeof form, value: string) {
+  function update(field: keyof typeof form, value: string | File | null) {
     setForm((current) => ({ ...current, [field]: value }));
     setErrors((current) => ({ ...current, [field]: "" }));
   }
@@ -96,14 +102,7 @@ function MemberRegistration() {
     event.preventDefault();
     const next: FieldErrors = {};
     if (!form.name.trim() || form.name.trim().length < 3) next.name = "Informe seu nome completo.";
-    if (!form.image_url.trim()) next.image_url = "Informe a URL da sua foto.";
-    try {
-      const photo = new URL(form.image_url);
-      if (!(["http:", "https:"] as string[]).includes(photo.protocol))
-        next.image_url = "Use uma URL de foto http ou https.";
-    } catch {
-      if (form.image_url) next.image_url = "Informe uma URL de foto válida.";
-    }
+    if (!form.photo) next.photo = "Selecione e ajuste sua foto.";
     if (form.password.length < 6 || form.password.length > 72)
       next.password = "A senha deve ter entre 6 e 72 caracteres.";
     if (form.password !== form.confirmPassword) next.confirmPassword = "As senhas não coincidem.";
@@ -115,7 +114,7 @@ function MemberRegistration() {
       token,
       name: form.name,
       password: form.password,
-      image_url: form.image_url,
+      photo: form.photo!,
     });
     setLoading(false);
     if (!result.ok) {
@@ -190,7 +189,7 @@ function MemberRegistration() {
             </div>
             <Link
               className="bg-lime text-pine inline-flex h-10 items-center justify-center rounded-xl px-5 text-sm font-semibold"
-              href="/login"
+              href="/entrar"
             >
               Entrar na plataforma
             </Link>
@@ -198,13 +197,8 @@ function MemberRegistration() {
         ) : (
           <div className="space-y-5">
             <InvitationSummary invitation={invitation!} />
-            <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
-              <FormField
-                id="name"
-                label="Nome completo"
-                error={errors.name}
-                className="sm:col-span-2"
-              >
+            <form className="space-y-5" onSubmit={submit}>
+              <FormField id="name" label="Nome completo" error={errors.name}>
                 <Input
                   id="name"
                   placeholder="Mariana Souza"
@@ -215,52 +209,46 @@ function MemberRegistration() {
                   onChange={(event) => update("name", event.target.value)}
                 />
               </FormField>
-              <FormField
-                id="photo"
-                label="URL da foto"
-                error={errors.image_url}
-                hint="Use uma foto de perfil com link público."
-                className="sm:col-span-2"
-              >
-                <Input
+              <FormField id="photo" label="Foto de perfil" error={errors.photo}>
+                <AvatarCropInput
                   id="photo"
-                  type="url"
-                  className="bg-card h-11"
-                  value={form.image_url}
-                  aria-invalid={Boolean(errors.image_url)}
-                  onChange={(event) => update("image_url", event.target.value)}
-                  placeholder="https://exemplo.com/foto.jpg"
+                  value={form.photo}
+                  invalid={Boolean(errors.photo)}
+                  onChange={(value) => update("photo", value)}
+                  onInvalid={(message) => setErrors((current) => ({ ...current, photo: message }))}
                 />
               </FormField>
-              <FormField id="password" label="Crie sua senha" error={errors.password}>
-                <Input
-                  id="password"
-                  placeholder="Entre 6 e 72 caracteres"
-                  className="bg-card h-11"
-                  type="password"
-                  autoComplete="new-password"
-                  value={form.password}
-                  aria-invalid={Boolean(errors.password)}
-                  onChange={(event) => update("password", event.target.value)}
-                />
-              </FormField>
-              <FormField
-                id="confirmPassword"
-                label="Confirmar senha"
-                error={errors.confirmPassword}
-              >
-                <Input
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField id="password" label="Crie sua senha" error={errors.password}>
+                  <Input
+                    id="password"
+                    placeholder="Entre 6 e 72 caracteres"
+                    className="bg-card h-11"
+                    type="password"
+                    autoComplete="new-password"
+                    value={form.password}
+                    aria-invalid={Boolean(errors.password)}
+                    onChange={(event) => update("password", event.target.value)}
+                  />
+                </FormField>
+                <FormField
                   id="confirmPassword"
-                  placeholder="Repita a senha"
-                  className="bg-card h-11"
-                  type="password"
-                  autoComplete="new-password"
-                  value={form.confirmPassword}
-                  aria-invalid={Boolean(errors.confirmPassword)}
-                  onChange={(event) => update("confirmPassword", event.target.value)}
-                />
-              </FormField>
-              <Button type="submit" className="h-12 sm:col-span-2" disabled={loading}>
+                  label="Confirmar senha"
+                  error={errors.confirmPassword}
+                >
+                  <Input
+                    id="confirmPassword"
+                    placeholder="Repita a senha"
+                    className="bg-card h-11"
+                    type="password"
+                    autoComplete="new-password"
+                    value={form.confirmPassword}
+                    aria-invalid={Boolean(errors.confirmPassword)}
+                    onChange={(event) => update("confirmPassword", event.target.value)}
+                  />
+                </FormField>
+              </div>
+              <Button type="submit" className="h-12 w-full" disabled={loading}>
                 {loading ? <Loader2Icon className="animate-spin" /> : null}
                 {loading ? "Concluindo…" : "Concluir cadastro"}
               </Button>

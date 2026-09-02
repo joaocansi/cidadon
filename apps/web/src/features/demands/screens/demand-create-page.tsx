@@ -15,7 +15,7 @@ export default function NewDemandPage() {
         subtitle="Descreva a situação e marque o ponto exato no mapa para encaminharmos ao gabinete adequado."
       >
         <Link
-          href="/demands"
+          href="/demandas"
           className="text-lime-deep mb-5 inline-flex items-center gap-2 text-sm font-semibold"
         >
           <ArrowLeftIcon className="size-4" />

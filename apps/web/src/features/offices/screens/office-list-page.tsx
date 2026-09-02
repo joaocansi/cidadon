@@ -119,7 +119,7 @@ export default function OfficesPage() {
       ) : offices.length ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {offices.map((office) => (
-            <Link key={office.office_id} href={`/offices/${office.office_id}`} className="group">
+            <Link key={office.office_id} href={`/gabinetes/${office.slug}`} className="group">
               <Card className="border-line group-hover:border-lime/70 h-full transition duration-200 group-hover:-translate-y-0.5 group-hover:shadow-[var(--shadow-card)]">
                 <CardContent className="p-5">
                   <div className="flex items-start gap-3">

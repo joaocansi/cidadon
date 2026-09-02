@@ -52,7 +52,7 @@ export default function LoginPage() {
 
     showToast("Login realizado. Bem-vindo(a) ao Cidadon!");
     await refresh();
-    router.replace(result.data?.role === "citizen" ? "/demands" : "/office");
+    router.replace(result.data?.role === "citizen" ? "/demandas" : "/gabinete");
     router.refresh();
   }
 
@@ -130,12 +130,12 @@ export default function LoginPage() {
 
           <p className="text-ink-soft text-center text-[14px]">
             Ainda não tem conta?{" "}
-            <Link href="/register" className="text-lime-deep hover:text-pine font-semibold">
+            <Link href="/cadastro" className="text-lime-deep hover:text-pine font-semibold">
               Criar conta de cidadão
             </Link>
             <span className="mx-1">ou</span>
             <Link
-              href="/register/councillor"
+              href="/cadastro/vereador"
               className="text-lime-deep hover:text-pine font-semibold"
             >
               criar conta de vereador

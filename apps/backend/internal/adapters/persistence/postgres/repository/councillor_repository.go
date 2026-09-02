@@ -29,6 +29,7 @@ func (c *CouncillorRepositoryImpl) FindByUserID(ctx context.Context, userID uint
 func (c *CouncillorRepositoryImpl) UpdateByUserID(ctx context.Context, userID uint, data repository.UpdateCouncillorData) (*entity.Councillor, error) {
 	var item model.Councillor
 	result := c.GetDB(ctx).Model(&item).Where("user_id = ?", userID).Updates(map[string]any{
+		"party": data.Party,
 		"city":  data.City,
 		"state": data.State,
 	})

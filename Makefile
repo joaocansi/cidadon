@@ -33,11 +33,11 @@ mailpit:
 
 api:
 	@mkdir -p $(RUNTIME_DIR)
-	@if test -f $(RUNTIME_DIR)/api.pid && kill -0 $$(cat $(RUNTIME_DIR)/api.pid) 2>/dev/null; then echo "API já está em execução"; else cd $(BACKEND_DIR) && go build -o ../../$(RUNTIME_DIR)/cidadon-api ./cmd/api && (nohup ../../$(RUNTIME_DIR)/cidadon-api >../../$(RUNTIME_DIR)/api.log 2>&1 & echo $$! >../../$(RUNTIME_DIR)/api.pid); fi
+	@if test -f $(RUNTIME_DIR)/api.pid && kill -0 $$(cat $(RUNTIME_DIR)/api.pid) 2>/dev/null; then echo "API já está em execução"; else cd $(BACKEND_DIR) && GOCACHE=$(GO_CACHE) go build -o ../../$(RUNTIME_DIR)/cidadon-api ./cmd/api && (nohup ../../$(RUNTIME_DIR)/cidadon-api >../../$(RUNTIME_DIR)/api.log 2>&1 & echo $$! >../../$(RUNTIME_DIR)/api.pid); fi
 
 worker:
 	@mkdir -p $(RUNTIME_DIR)
-	@if test -f $(RUNTIME_DIR)/worker.pid && kill -0 $$(cat $(RUNTIME_DIR)/worker.pid) 2>/dev/null; then echo "Worker já está em execução"; else cd $(BACKEND_DIR) && go build -o ../../$(RUNTIME_DIR)/cidadon-worker ./cmd/worker && (nohup ../../$(RUNTIME_DIR)/cidadon-worker >../../$(RUNTIME_DIR)/worker.log 2>&1 & echo $$! >../../$(RUNTIME_DIR)/worker.pid); fi
+	@if test -f $(RUNTIME_DIR)/worker.pid && kill -0 $$(cat $(RUNTIME_DIR)/worker.pid) 2>/dev/null; then echo "Worker já está em execução"; else cd $(BACKEND_DIR) && GOCACHE=$(GO_CACHE) go build -o ../../$(RUNTIME_DIR)/cidadon-worker ./cmd/worker && (nohup ../../$(RUNTIME_DIR)/cidadon-worker >../../$(RUNTIME_DIR)/worker.log 2>&1 & echo $$! >../../$(RUNTIME_DIR)/worker.pid); fi
 
 web:
 	@mkdir -p $(RUNTIME_DIR)

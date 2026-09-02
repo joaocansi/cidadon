@@ -34,7 +34,7 @@ export function Hero() {
           </p>
           <div className="hero-ctas">
             <Link
-              href="/register"
+              href="/cadastro"
               className={cn(
                 buttonVariants({ variant: "default" }),
                 "h-12 rounded-full px-6 text-[15px]",
@@ -43,7 +43,7 @@ export function Hero() {
               Sou cidadão, quero registrar
             </Link>
             <Link
-              href="/register/councillor"
+              href="/cadastro/vereador"
               className={cn(
                 buttonVariants({ variant: "outline" }),
                 "h-12 rounded-full px-6 text-[15px]",

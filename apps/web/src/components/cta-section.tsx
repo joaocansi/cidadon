@@ -19,13 +19,13 @@ export function CtaSection() {
           </p>
           <div className="hero-ctas">
             <Link
-              href="/register"
+              href="/cadastro"
               className={cn(buttonVariants(), "h-12 rounded-full px-6 text-[15px]")}
             >
               Criar conta de cidadão
             </Link>
             <Link
-              href="/register/councillor"
+              href="/cadastro/vereador"
               className={cn(
                 buttonVariants({ variant: "outline" }),
                 "bg-card h-12 rounded-full px-6 text-[15px]",

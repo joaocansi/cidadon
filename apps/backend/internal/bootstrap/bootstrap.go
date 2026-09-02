@@ -11,7 +11,11 @@ import (
 	"cidadon/internal/domain/entity"
 	environment "cidadon/internal/platform/config"
 	"cidadon/internal/platform/database"
+	platformmedia "cidadon/internal/platform/media"
+	"fmt"
 	netHttp "net/http"
+	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -29,6 +33,7 @@ func migrate(db *gorm.DB) error {
 		&model.OfficeMemberRequest{},
 		&model.Demand{},
 		&model.DemandAssignment{},
+		&model.DemandSupport{},
 		&model.DemandEvent{},
 		&model.DemandComment{},
 		&model.DemandCommentReport{},
@@ -36,8 +41,39 @@ func migrate(db *gorm.DB) error {
 	)
 }
 
+func backfillOfficeSlugs(db *gorm.DB) error {
+	var offices []model.Office
+	if err := db.Preload("Councillor.User").Find(&offices).Error; err != nil {
+		return err
+	}
+	for _, office := range offices {
+		if strings.TrimSpace(office.Slug) != "" {
+			continue
+		}
+		party, name := "", ""
+		if office.Councillor != nil {
+			party = office.Councillor.Party
+			if office.Councillor.User != nil {
+				name = office.Councillor.User.Name
+			}
+		}
+		if err := db.Model(&office).Update("slug", entity.OfficeSlug(party, name, office.CouncillorID)).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func Run() error {
+	openAPISpec, err := os.ReadFile("docs/openapi.yaml")
+	if err != nil {
+		return fmt.Errorf("read OpenAPI specification: %w", err)
+	}
 	if err := environment.Load(); err != nil {
+		return err
+	}
+	mediaStorage, err := platformmedia.NewStorage(environment.Env.Media)
+	if err != nil {
 		return err
 	}
 
@@ -58,6 +94,9 @@ func Run() error {
 	if err := migrate(db); err != nil {
 		return err
 	}
+	if err := backfillOfficeSlugs(db); err != nil {
+		return fmt.Errorf("backfill office slugs: %w", err)
+	}
 	if err := db.Model(&model.Demand{}).Where("status = ?", "seen").Update("status", string(entity.DemandStatusReview)).Error; err != nil {
 		return err
 	}
@@ -70,6 +109,21 @@ func Run() error {
 	}
 	for _, demand := range legacyDemands {
 		if err := db.Create(&model.DemandEvent{DemandID: demand.ID, Type: "migrated", Metadata: []byte(`{"source":"legacy_status"}`)}).Error; err != nil {
+			return err
+		}
+	}
+	// Keep the migration audit event internal while ensuring legacy demands have
+	// the same public creation event used by the current timeline and author UI.
+	var demandsWithoutCreation []model.Demand
+	if err := db.Where("NOT EXISTS (SELECT 1 FROM demand_events WHERE demand_events.demand_id = demands.id AND demand_events.type = ?)", "created").Find(&demandsWithoutCreation).Error; err != nil {
+		return err
+	}
+	for _, demand := range demandsWithoutCreation {
+		citizenID := demand.CitizenID
+		if err := db.Create(&model.DemandEvent{
+			DemandID: demand.ID, Type: "created", ActorUserID: &citizenID,
+			Metadata: []byte(`{"source":"legacy_migration"}`), Model: gorm.Model{CreatedAt: demand.CreatedAt},
+		}).Error; err != nil {
 			return err
 		}
 	}
@@ -98,18 +152,25 @@ func Run() error {
 	demandRepository := repository.NewDemandRepository(baseRepository)
 	transactionManager := database.NewTransactionManager(db)
 
+	mediaService := usecase.NewMediaService(mediaStorage)
 	authService := usecase.NewAuthService(userRepository, sessionRepository, citizenRepository, councillorRepository, officeMemberRepository, officeMemberRequestRepository, transactionManager, jwtProvider, hashProvider, cryptoProvider, nominatimAddressEnricher, logger)
-	authHandler := handler.NewAuthHandler(authService)
+	authHandler := handler.NewAuthHandler(authService, mediaService)
 
 	officeService := usecase.NewOfficeService(officeRepository, councillorRepository, userRepository, officeMemberRepository, officeMemberRequestRepository, hashProvider, provider.NewSMTPMailer(logger), transactionManager, logger)
 	officeHandler := handler.NewOfficeHandler(officeService)
+	partyHandler := handler.NewPartyHandler()
 	demandService := usecase.NewDemandService(demandRepository, officeRepository, db, logger)
-	demandHandler := handler.NewDemandHandler(demandService, officeService)
+	demandHandler := handler.NewDemandHandler(demandService, officeService, mediaService)
 
 	router := gin.New()
 	router.Use(http.ErrorHandler())
+	if strings.EqualFold(environment.Env.Media.Driver, "local") {
+		router.StaticFS("/media", netHttp.Dir(environment.Env.Media.LocalDir))
+	}
 
+	routes.RegisterOpenAPI(router, openAPISpec)
 	routes.RegisterAuth(router, authMiddleware, authHandler)
+	routes.RegisterParties(router, partyHandler)
 	routes.RegisterOffice(router, authMiddleware, officeHandler)
 	routes.RegisterDemands(router, authMiddleware, demandHandler)
 	routes.RegisterNotifications(router, authMiddleware, demandHandler)

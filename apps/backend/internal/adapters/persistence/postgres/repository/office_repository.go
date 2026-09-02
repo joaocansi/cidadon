@@ -35,6 +35,17 @@ func (o *OfficeRepositoryImpl) FindByID(ctx context.Context, id uint) (*entity.O
 	return officeModel.ToDomain(), nil
 }
 
+func (o *OfficeRepositoryImpl) FindBySlug(ctx context.Context, slug string) (*entity.Office, error) {
+	var officeModel model.Office
+	if err := o.GetDB(ctx).Preload("Councillor.User").First(&officeModel, "slug = ?", slug).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, repository.NewDBError(repository.DBErrorNotFound, err)
+		}
+		return nil, repository.NewDBError(repository.DBErrorInternal, err)
+	}
+	return officeModel.ToDomain(), nil
+}
+
 func (o *OfficeRepositoryImpl) Search(ctx context.Context, queryText, city, state string) ([]entity.Office, error) {
 	var offices []model.Office
 	query := o.GetDB(ctx).Preload("Councillor.User").Joins("JOIN councillors ON councillors.user_id = offices.councillor_id").Joins("JOIN users ON users.id = councillors.user_id")
@@ -125,6 +136,7 @@ func (o *OfficeRepositoryImpl) ListActiveOfficeIDsNear(ctx context.Context, lati
 func (o *OfficeRepositoryImpl) Create(ctx context.Context, data repository.CreateOfficeData) (*entity.Office, error) {
 	officeModel := model.Office{
 		CouncillorID:   data.CouncillorID,
+		Slug:           data.Slug,
 		Description:    data.Description,
 		Contacts:       o.toRawMessage(data.Contacts),
 		SocialNetworks: o.toRawMessage(data.SocialNetworks),
@@ -140,6 +152,7 @@ func (o *OfficeRepositoryImpl) Create(ctx context.Context, data repository.Creat
 
 func (o *OfficeRepositoryImpl) UpdateByCouncillorID(ctx context.Context, councillorID uint, data repository.UpdateOfficeData) (*entity.Office, error) {
 	officeModel := model.Office{
+		Slug:           data.Slug,
 		Description:    data.Description,
 		SocialNetworks: o.toRawMessage(data.SocialNetworks),
 		Contacts:       o.toRawMessage(data.Contacts),

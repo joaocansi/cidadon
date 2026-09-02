@@ -14,7 +14,7 @@ const NAV_LINKS = [
   { href: "/#como-funciona", label: "Como funciona" },
   { href: "/#cidadaos", label: "Para cidadãos" },
   { href: "/#vereadores", label: "Para vereadores" },
-  { href: "/demands", label: "Demandas" },
+  { href: "/demandas", label: "Demandas" },
   { href: "/#faq", label: "Perguntas frequentes" },
 ];
 
@@ -46,7 +46,7 @@ export function SiteHeader() {
       router.refresh();
     }
   }
-  const areaHref = user?.role === "citizen" ? "/demands" : "/office";
+  const areaHref = user?.role === "citizen" ? "/demandas" : "/gabinete";
 
   return (
     <header
@@ -101,13 +101,13 @@ export function SiteHeader() {
           ) : (
             <>
               <Link
-                href="/login"
+                href="/entrar"
                 className="text-ink-soft hover:text-ink hidden text-[15px] font-semibold transition-colors lg:inline-block"
               >
                 Entrar
               </Link>
               <Link
-                href="/register"
+                href="/cadastro"
                 className={cn(
                   buttonVariants({ variant: "default", size: "sm" }),
                   "h-9 rounded-full px-5",
@@ -172,14 +172,14 @@ export function SiteHeader() {
           ) : (
             <>
               <Link
-                href="/login"
+                href="/entrar"
                 onClick={() => setOpen(false)}
                 className={cn(buttonVariants({ variant: "outline" }), "h-12 w-full rounded-full")}
               >
                 Entrar
               </Link>
               <Link
-                href="/register"
+                href="/cadastro"
                 onClick={() => setOpen(false)}
                 className={cn(buttonVariants({ variant: "default" }), "h-12 w-full rounded-full")}
               >

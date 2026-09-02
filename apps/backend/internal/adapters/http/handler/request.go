@@ -2,12 +2,16 @@ package handler
 
 import (
 	service "cidadon/internal/application/contract"
+	"mime/multipart"
+	"net/http"
 	"strings"
 	"unicode"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 )
+
+const maxMultipartRequestBytes = 12 << 20
 
 func bindRequest(c *gin.Context, request any) bool {
 	if err := c.ShouldBind(request); err != nil {
@@ -21,6 +25,22 @@ func bindRequest(c *gin.Context, request any) bool {
 		return false
 	}
 	return true
+}
+
+func bindMultipartRequest(c *gin.Context, request any) bool {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxMultipartRequestBytes)
+	if err := c.Request.ParseMultipartForm(maxMultipartRequestBytes); err != nil {
+		c.Error(service.InvalidInput("invalid multipart request"))
+		return false
+	}
+	return bindRequest(c, request)
+}
+
+func multipartFiles(c *gin.Context, field string) []*multipart.FileHeader {
+	if c.Request.MultipartForm == nil {
+		return nil
+	}
+	return c.Request.MultipartForm.File[field]
 }
 
 func jsonFieldName(field string) string {

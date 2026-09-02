@@ -7,12 +7,13 @@ import (
 	"cidadon/internal/domain/repository"
 	"context"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+	"net/url"
 	"strings"
 	"time"
 
@@ -35,52 +36,81 @@ func NewDemandService(demandRepo repository.DemandRepository, officeRepo reposit
 	}
 }
 
-func (s *DemandServiceImpl) Claim(ctx context.Context, id, officeID, userID uint) (*service.DemandOutput, error) {
-	return s.transition(ctx, id, officeID, userID, entity.DemandStatusRegistered, entity.DemandStatusReview, "claimed", nil)
+func (s *DemandServiceImpl) Claim(ctx context.Context, id, officeID, userID uint, input service.DemandTimelineInput) (*service.DemandOutput, error) {
+	return s.transition(ctx, id, officeID, userID, entity.DemandStatusRegistered, entity.DemandStatusReview, "claimed", input)
 }
-func (s *DemandServiceImpl) Start(ctx context.Context, id, officeID, userID uint) (*service.DemandOutput, error) {
-	return s.transition(ctx, id, officeID, userID, entity.DemandStatusReview, entity.DemandStatusInProgress, "execution_started", nil)
+func (s *DemandServiceImpl) Start(ctx context.Context, id, officeID, userID uint, input service.DemandTimelineInput) (*service.DemandOutput, error) {
+	return s.transition(ctx, id, officeID, userID, entity.DemandStatusReview, entity.DemandStatusInProgress, "execution_started", input)
 }
-func (s *DemandServiceImpl) RequestConfirmation(ctx context.Context, id, officeID, userID uint, input service.DemandCommentInput) (*service.DemandOutput, error) {
-	if err := validateComment(input); err != nil {
-		return nil, err
-	}
-	d, e := s.transition(ctx, id, officeID, userID, entity.DemandStatusInProgress, entity.DemandStatusAwaitingConfirmation, "confirmation_requested", &input)
+func (s *DemandServiceImpl) RequestConfirmation(ctx context.Context, id, officeID, userID uint, input service.DemandTimelineInput) (*service.DemandOutput, error) {
+	d, e := s.transition(ctx, id, officeID, userID, entity.DemandStatusInProgress, entity.DemandStatusAwaitingConfirmation, "confirmation_requested", input)
 	return d, e
 }
 func (s *DemandServiceImpl) Confirm(ctx context.Context, id, citizenID uint) (*service.DemandOutput, error) {
 	var m model.Demand
-	if e := s.db.WithContext(ctx).First(&m, id).Error; e != nil || m.CitizenID != citizenID || m.Status != string(entity.DemandStatusAwaitingConfirmation) {
-		return nil, service.Forbidden("cannot confirm this demand")
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.First(&m, id).Error; err != nil {
+			return err
+		}
+		if m.CitizenID != citizenID || m.Status != string(entity.DemandStatusAwaitingConfirmation) {
+			return service.Forbidden("cannot confirm this demand")
+		}
+		if err := tx.Model(&m).Updates(map[string]any{"status": entity.DemandStatusCompleted, "confirmation_due_at": nil}).Error; err != nil {
+			return err
+		}
+		metadata, _ := json.Marshal(statusMetadata(nil, entity.DemandStatusAwaitingConfirmation, entity.DemandStatusCompleted))
+		return tx.Create(&model.DemandEvent{DemandID: id, Type: "confirmed", ActorUserID: &citizenID, Metadata: metadata}).Error
+	})
+	if err != nil {
+		if _, ok := service.From(err); ok {
+			return nil, err
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, service.NotFound("demand not found")
+		}
+		return nil, service.Internal(err)
 	}
-	if e := s.db.WithContext(ctx).Model(&m).Updates(map[string]any{"status": entity.DemandStatusCompleted, "confirmation_due_at": nil}).Error; e != nil {
-		return nil, service.Internal(e)
-	}
-	_ = s.record(ctx, id, "confirmed", &citizenID, nil)
+	m.Status = string(entity.DemandStatusCompleted)
+	m.ConfirmationDueAt = nil
 	_ = s.notifyParticipants(ctx, m, citizenID, "demand_confirmed")
 	return demandToOutput(m.ToDomain()), nil
 }
-func (s *DemandServiceImpl) Reopen(ctx context.Context, id, citizenID uint, input service.DemandCommentInput) (*service.DemandOutput, error) {
-	if err := validateComment(input); err != nil {
+func (s *DemandServiceImpl) Reopen(ctx context.Context, id, citizenID uint, input service.DemandTimelineInput) (*service.DemandOutput, error) {
+	if err := validateTimelineInput(input); err != nil {
 		return nil, err
 	}
 	var m model.Demand
-	if e := s.db.WithContext(ctx).First(&m, id).Error; e != nil || m.CitizenID != citizenID || m.Status != string(entity.DemandStatusAwaitingConfirmation) {
-		return nil, service.Forbidden("cannot reopen this demand")
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.First(&m, id).Error; err != nil {
+			return err
+		}
+		if m.CitizenID != citizenID || m.Status != string(entity.DemandStatusAwaitingConfirmation) {
+			return service.Forbidden("cannot reopen this demand")
+		}
+		if err := tx.Model(&m).Updates(map[string]any{"status": entity.DemandStatusReview, "confirmation_due_at": nil}).Error; err != nil {
+			return err
+		}
+		metadata, _ := json.Marshal(statusMetadata(&input, entity.DemandStatusAwaitingConfirmation, entity.DemandStatusReview))
+		return tx.Create(&model.DemandEvent{DemandID: id, Type: "reopened", ActorUserID: &citizenID, Metadata: metadata}).Error
+	})
+	if err != nil {
+		if _, ok := service.From(err); ok {
+			return nil, err
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, service.NotFound("demand not found")
+		}
+		return nil, service.Internal(err)
 	}
-	if e := s.db.WithContext(ctx).Model(&m).Updates(map[string]any{"status": entity.DemandStatusReview, "confirmation_due_at": nil}).Error; e != nil {
-		return nil, service.Internal(e)
-	}
-	_, e := s.Comment(ctx, id, citizenID, entity.CitizenUser, input)
-	if e != nil {
-		return nil, e
-	}
-	_ = s.record(ctx, id, "reopened", &citizenID, nil)
-	_ = s.notifyParticipants(ctx, m, citizenID, "demand_reopened")
 	m.Status = string(entity.DemandStatusReview)
+	m.ConfirmationDueAt = nil
+	_ = s.notifyParticipants(ctx, m, citizenID, "demand_reopened")
 	return demandToOutput(m.ToDomain()), nil
 }
-func (s *DemandServiceImpl) transition(ctx context.Context, id, officeID, userID uint, from, to entity.DemandStatus, event string, input *service.DemandCommentInput) (*service.DemandOutput, error) {
+func (s *DemandServiceImpl) transition(ctx context.Context, id, officeID, userID uint, from, to entity.DemandStatus, event string, input service.DemandTimelineInput) (*service.DemandOutput, error) {
+	if err := validateTimelineInput(input); err != nil {
+		return nil, err
+	}
 	var m model.Demand
 	e := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if e := tx.First(&m, id).Error; e != nil {
@@ -104,14 +134,8 @@ func (s *DemandServiceImpl) transition(ctx context.Context, id, officeID, userID
 		if e := tx.Model(&m).Updates(updates).Error; e != nil {
 			return e
 		}
-		if input != nil {
-			b, _ := json.Marshal(input.Images)
-			if e := tx.Create(&model.DemandComment{DemandID: id, AuthorID: userID, Body: strings.TrimSpace(input.Body), Images: b}).Error; e != nil {
-				return e
-			}
-			tx.Model(&m).UpdateColumn("comment_count", gorm.Expr("comment_count + 1"))
-		}
-		return tx.Create(&model.DemandEvent{DemandID: id, Type: event, ActorUserID: &userID, Metadata: json.RawMessage("{}")}).Error
+		metadata, _ := json.Marshal(statusMetadata(&input, from, to))
+		return tx.Create(&model.DemandEvent{DemandID: id, Type: event, ActorUserID: &userID, Metadata: metadata}).Error
 	})
 	if e != nil {
 		if _, ok := service.From(e); ok {
@@ -130,6 +154,48 @@ func (s *DemandServiceImpl) transition(ctx context.Context, id, officeID, userID
 	_ = s.notifyParticipants(ctx, m, userID, "demand_"+event)
 	return demandToOutput(m.ToDomain()), nil
 }
+
+func statusMetadata(input *service.DemandTimelineInput, from, to entity.DemandStatus) map[string]any {
+	metadata := map[string]any{"from_status": from, "to_status": to}
+	if input != nil {
+		metadata["message"] = strings.TrimSpace(input.Message)
+		metadata["images"] = normalizedImages(input.Images)
+	}
+	return metadata
+}
+
+func (s *DemandServiceImpl) CreateMilestone(ctx context.Context, id, officeID, userID uint, input service.DemandTimelineInput) error {
+	if err := validateTimelineInput(input); err != nil {
+		return err
+	}
+	var demand model.Demand
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.First(&demand, id).Error; err != nil {
+			return err
+		}
+		if demand.ResponsibleOfficeID == nil || *demand.ResponsibleOfficeID != officeID {
+			return service.Forbidden("only the responsible office can create a milestone")
+		}
+		metadata, _ := json.Marshal(map[string]any{
+			"message": strings.TrimSpace(input.Message),
+			"images":  normalizedImages(input.Images),
+		})
+		if err := tx.Create(&model.DemandEvent{DemandID: id, Type: "milestone", ActorUserID: &userID, Metadata: metadata}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&demand).Update("updated_at", time.Now()).Error
+	})
+	if err != nil {
+		if _, ok := service.From(err); ok {
+			return err
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return service.NotFound("demand not found")
+		}
+		return service.Internal(err)
+	}
+	return s.notifyParticipants(ctx, demand, userID, "demand_milestone")
+}
 func (s *DemandServiceImpl) Comment(ctx context.Context, id, userID uint, role entity.UserRole, input service.DemandCommentInput) (*entity.DemandComment, error) {
 	if err := validateComment(input); err != nil {
 		return nil, err
@@ -145,15 +211,59 @@ func (s *DemandServiceImpl) Comment(ctx context.Context, id, userID uint, role e
 	if e := s.db.WithContext(ctx).First(&u, userID).Error; e != nil {
 		return nil, service.Internal(e)
 	}
-	b, _ := json.Marshal(input.Images)
-	m := model.DemandComment{DemandID: id, AuthorID: userID, Body: strings.TrimSpace(input.Body), Images: b}
+	images := normalizedImages(input.Images)
+	b, _ := json.Marshal(images)
+	parentID, e := s.resolveCommentParent(ctx, id, input.ParentID)
+	if e != nil {
+		return nil, e
+	}
+	m := model.DemandComment{DemandID: id, ParentID: parentID, AuthorID: userID, Body: strings.TrimSpace(input.Body), Images: b}
 	if e := s.db.WithContext(ctx).Create(&m).Error; e != nil {
 		return nil, service.Internal(e)
 	}
 	s.db.WithContext(ctx).Model(&model.Demand{}).Where("id=?", id).UpdateColumn("comment_count", gorm.Expr("comment_count + 1"))
-	_ = s.record(ctx, id, "commented", &userID, nil)
 	_ = s.notifyParticipants(ctx, demand, userID, "demand_commented")
-	return &entity.DemandComment{ID: m.ID, DemandID: id, AuthorID: userID, AuthorName: u.Name, AuthorRole: role, Body: m.Body, Images: input.Images, CreatedAt: m.CreatedAt}, nil
+	return &entity.DemandComment{ID: m.ID, DemandID: id, ParentID: parentID, AuthorID: userID, AuthorName: u.Name, AuthorRole: role, AuthorImageURL: s.commentAuthorImage(ctx, userID, role), Body: m.Body, Images: images, CreatedAt: m.CreatedAt}, nil
+}
+
+// resolveCommentParent keeps one root comment plus a single reply column. Replies to an
+// existing reply are attached to that reply's root, preventing deeper nesting.
+func (s *DemandServiceImpl) resolveCommentParent(ctx context.Context, demandID uint, requested *uint) (*uint, error) {
+	if requested == nil {
+		return nil, nil
+	}
+	var parent model.DemandComment
+	if err := s.db.WithContext(ctx).Where("id = ? AND demand_id = ?", *requested, demandID).First(&parent).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, service.InvalidInput("invalid comment parent")
+		}
+		return nil, service.Internal(err)
+	}
+	if parent.ParentID != nil {
+		return parent.ParentID, nil
+	}
+	return &parent.ID, nil
+}
+
+func (s *DemandServiceImpl) commentAuthorImage(ctx context.Context, userID uint, role entity.UserRole) string {
+	switch role {
+	case entity.CouncillorUser:
+		var councillor model.Councillor
+		if s.db.WithContext(ctx).First(&councillor, "user_id = ?", userID).Error == nil {
+			return councillor.ImageURL
+		}
+	case entity.OfficeMemberUser:
+		var member model.OfficeMember
+		if s.db.WithContext(ctx).Preload("Office.Councillor").First(&member, "user_id = ?", userID).Error == nil {
+			if member.ImageURL != "" {
+				return member.ImageURL
+			}
+			if member.Office != nil && member.Office.Councillor != nil {
+				return member.Office.Councillor.ImageURL
+			}
+		}
+	}
+	return ""
 }
 
 func (s *DemandServiceImpl) notifyParticipants(ctx context.Context, demand model.Demand, actorID uint, kind string) error {
@@ -187,7 +297,7 @@ func (s *DemandServiceImpl) Activity(ctx context.Context, id uint) (*service.Dem
 	}
 	var es []model.DemandEvent
 	var cs []model.DemandComment
-	if e := s.db.WithContext(ctx).Where("demand_id=?", id).Order("created_at asc").Find(&es).Error; e != nil {
+	if e := s.db.WithContext(ctx).Where("demand_id=? AND type IN ?", id, publicTimelineEventTypes()).Order("created_at asc").Find(&es).Error; e != nil {
 		return nil, service.Internal(e)
 	}
 	if e := s.db.WithContext(ctx).Where("demand_id=?", id).Order("created_at asc").Find(&cs).Error; e != nil {
@@ -197,43 +307,218 @@ func (s *DemandServiceImpl) Activity(ctx context.Context, id uint) (*service.Dem
 	for _, e := range es {
 		var md map[string]any
 		_ = json.Unmarshal(e.Metadata, &md)
-		out.Events = append(out.Events, entity.DemandEvent{ID: e.ID, DemandID: e.DemandID, Type: e.Type, ActorUserID: e.ActorUserID, Metadata: md, CreatedAt: e.CreatedAt})
+		images, _ := md["images"].([]any)
+		imageURLs := make([]string, 0, len(images))
+		for _, image := range images {
+			if value, ok := image.(string); ok {
+				imageURLs = append(imageURLs, value)
+			}
+		}
+		if imageURLs == nil {
+			imageURLs = []string{}
+		}
+		actorName, actorRole, actorImage := "", entity.UserRole(""), ""
+		if e.ActorUserID != nil {
+			actorName, actorRole, actorImage = s.eventActor(ctx, *e.ActorUserID)
+		}
+		message, _ := md["message"].(string)
+		out.Events = append(out.Events, entity.DemandEvent{
+			ID: e.ID, DemandID: e.DemandID, Type: e.Type, ActorUserID: e.ActorUserID,
+			ActorName: actorName, ActorRole: actorRole, ActorImageURL: actorImage,
+			Message: message, Images: imageURLs, Metadata: md, CreatedAt: e.CreatedAt,
+		})
 	}
 	for _, c := range cs {
 		var u model.User
 		_ = s.db.WithContext(ctx).First(&u, c.AuthorID).Error
-		var imgs []string
+		imgs := make([]string, 0)
 		_ = json.Unmarshal(c.Images, &imgs)
+		imgs = normalizedImages(imgs)
 		body, images := c.Body, imgs
 		if c.HiddenAt != nil {
-			body, images = "", nil
+			body, images = "", []string{}
 		}
-		out.Comments = append(out.Comments, entity.DemandComment{ID: c.ID, DemandID: c.DemandID, AuthorID: c.AuthorID, AuthorName: u.Name, AuthorRole: entity.UserRole(u.Role), Body: body, Images: images, HiddenAt: c.HiddenAt, Hidden: c.HiddenAt != nil, CreatedAt: c.CreatedAt})
+		role := entity.UserRole(u.Role)
+		out.Comments = append(out.Comments, entity.DemandComment{ID: c.ID, DemandID: c.DemandID, ParentID: c.ParentID, AuthorID: c.AuthorID, AuthorName: u.Name, AuthorRole: role, AuthorImageURL: s.commentAuthorImage(ctx, c.AuthorID, role), Body: body, Images: images, HiddenAt: c.HiddenAt, Hidden: c.HiddenAt != nil, CreatedAt: c.CreatedAt})
 	}
 	return out, nil
+}
+
+func publicTimelineEventTypes() []string {
+	return []string{
+		"created", "claimed", "execution_started", "confirmation_requested", "confirmed",
+		"reopened", "automatically_completed", "milestone",
+	}
+}
+
+func (s *DemandServiceImpl) eventActor(ctx context.Context, userID uint) (string, entity.UserRole, string) {
+	var user model.User
+	if err := s.db.WithContext(ctx).First(&user, userID).Error; err != nil {
+		return "", "", ""
+	}
+	role := entity.UserRole(user.Role)
+	return user.Name, role, s.commentAuthorImage(ctx, userID, role)
 }
 
 func validateComment(input service.DemandCommentInput) error {
 	if strings.TrimSpace(input.Body) == "" && len(input.Images) == 0 {
 		return service.InvalidInput("comment content required")
 	}
-	if len(input.Images) > 5 {
+	return validateImages(input.Images)
+}
+
+func validateTimelineInput(input service.DemandTimelineInput) error {
+	if len(strings.TrimSpace(input.Message)) < 3 {
+		return service.InvalidInput("timeline message required")
+	}
+	return validateImages(input.Images)
+}
+
+func validateImages(images []string) error {
+	if len(images) > 5 {
 		return service.InvalidInput("too many images")
 	}
-	for _, image := range input.Images {
-		if !(strings.HasPrefix(image, "data:image/jpeg;base64,") || strings.HasPrefix(image, "data:image/png;base64,") || strings.HasPrefix(image, "data:image/webp;base64,")) {
-			return service.InvalidInput("invalid image type")
-		}
-		parts := strings.SplitN(image, ",", 2)
-		if len(parts) != 2 {
-			return service.InvalidInput("invalid image")
-		}
-		decoded, err := base64.StdEncoding.DecodeString(parts[1])
-		if err != nil || len(decoded) > 2<<20 {
-			return service.InvalidInput("invalid image size")
+	for _, image := range images {
+		url, err := url.Parse(image)
+		if err != nil || (url.Scheme != "http" && url.Scheme != "https") || url.Host == "" {
+			return service.InvalidInput("invalid image URL")
 		}
 	}
 	return nil
+}
+
+func (s *DemandServiceImpl) GetSupport(ctx context.Context, demandID, citizenID uint) (*service.DemandSupportOutput, error) {
+	var demand model.Demand
+	if err := s.db.WithContext(ctx).First(&demand, demandID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, service.NotFound("demand not found")
+		}
+		return nil, service.Internal(err)
+	}
+	return s.supportState(ctx, demand, citizenID)
+}
+
+func (s *DemandServiceImpl) AddSupport(ctx context.Context, demandID, citizenID uint) (*service.DemandSupportOutput, error) {
+	var demand model.Demand
+	var added bool
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&demand, demandID).Error; err != nil {
+			return err
+		}
+		if demand.CitizenID == citizenID {
+			return service.Forbidden("demand author cannot support")
+		}
+		result := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "demand_id"}, {Name: "citizen_id"}}, DoNothing: true}).Create(&model.DemandSupport{DemandID: demandID, CitizenID: citizenID})
+		if result.Error != nil {
+			return result.Error
+		}
+		added = result.RowsAffected > 0
+		if added {
+			return tx.Model(&demand).UpdateColumn("support_count", gorm.Expr("support_count + 1")).Error
+		}
+		return nil
+	}); err != nil {
+		if _, ok := service.From(err); ok {
+			return nil, err
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, service.NotFound("demand not found")
+		}
+		return nil, service.Internal(err)
+	}
+	if added {
+		demand.SupportCount++
+	}
+	return &service.DemandSupportOutput{SupportCount: demand.SupportCount, Supported: true, CanSupport: true}, nil
+}
+
+func (s *DemandServiceImpl) RemoveSupport(ctx context.Context, demandID, citizenID uint) (*service.DemandSupportOutput, error) {
+	var demand model.Demand
+	var removed bool
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&demand, demandID).Error; err != nil {
+			return err
+		}
+		result := tx.Unscoped().Where("demand_id = ? AND citizen_id = ?", demandID, citizenID).Delete(&model.DemandSupport{})
+		if result.Error != nil {
+			return result.Error
+		}
+		removed = result.RowsAffected > 0
+		if removed {
+			return tx.Model(&demand).UpdateColumn("support_count", gorm.Expr("GREATEST(support_count - 1, 0)")).Error
+		}
+		return nil
+	}); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, service.NotFound("demand not found")
+		}
+		return nil, service.Internal(err)
+	}
+	if removed && demand.SupportCount > 0 {
+		demand.SupportCount--
+	}
+	return &service.DemandSupportOutput{SupportCount: demand.SupportCount, Supported: false, CanSupport: demand.CitizenID != citizenID}, nil
+}
+
+func (s *DemandServiceImpl) supportState(ctx context.Context, demand model.Demand, citizenID uint) (*service.DemandSupportOutput, error) {
+	output := &service.DemandSupportOutput{SupportCount: demand.SupportCount, CanSupport: demand.CitizenID != citizenID}
+	if !output.CanSupport {
+		return output, nil
+	}
+	var support model.DemandSupport
+	err := s.db.WithContext(ctx).Where("demand_id = ? AND citizen_id = ?", demand.ID, citizenID).First(&support).Error
+	if err == nil {
+		output.Supported = true
+		return output, nil
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return output, nil
+	}
+	return nil, service.Internal(err)
+}
+
+func (s *DemandServiceImpl) DeleteComment(ctx context.Context, commentID, userID uint) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var comment model.DemandComment
+		if err := tx.First(&comment, commentID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return service.NotFound("comment not found")
+			}
+			return service.Internal(err)
+		}
+		if comment.AuthorID != userID {
+			return service.Forbidden("only the comment author can delete it")
+		}
+
+		commentIDs := []uint{comment.ID}
+		var replyIDs []uint
+		if err := tx.Model(&model.DemandComment{}).Where("parent_id = ?", comment.ID).Pluck("id", &replyIDs).Error; err != nil {
+			return service.Internal(err)
+		}
+		commentIDs = append(commentIDs, replyIDs...)
+
+		if err := tx.Where("comment_id IN ?", commentIDs).Delete(&model.DemandCommentReport{}).Error; err != nil {
+			return service.Internal(err)
+		}
+		if err := tx.Where("id IN ?", commentIDs).Delete(&model.DemandComment{}).Error; err != nil {
+			return service.Internal(err)
+		}
+		if err := tx.Model(&model.Demand{}).Where("id = ?", comment.DemandID).UpdateColumn("comment_count", gorm.Expr("GREATEST(comment_count - ?, 0)", len(commentIDs))).Error; err != nil {
+			return service.Internal(err)
+		}
+		metadata, _ := json.Marshal(map[string]any{"comment_id": comment.ID, "deleted_comment_count": len(commentIDs)})
+		if err := tx.Create(&model.DemandEvent{DemandID: comment.DemandID, Type: "comment_deleted", ActorUserID: &userID, Metadata: metadata}).Error; err != nil {
+			return service.Internal(err)
+		}
+		return nil
+	})
+}
+
+func normalizedImages(images []string) []string {
+	if images == nil {
+		return []string{}
+	}
+	return images
 }
 
 func (s *DemandServiceImpl) ReportComment(ctx context.Context, commentID, userID uint, reason string) error {
@@ -279,6 +564,17 @@ func (s *DemandServiceImpl) HideComment(ctx context.Context, commentID, officeID
 func (s *DemandServiceImpl) ListNotifications(ctx context.Context, userID uint) ([]service.NotificationOutput, error) {
 	var rows []model.Notification
 	if err := s.db.WithContext(ctx).Where("user_id = ?", userID).Order("created_at desc").Limit(50).Find(&rows).Error; err != nil {
+		return nil, service.Internal(err)
+	}
+	out := make([]service.NotificationOutput, 0, len(rows))
+	for _, n := range rows {
+		out = append(out, service.NotificationOutput{ID: n.ID, Type: n.Type, DemandID: n.DemandID, ReadAt: n.ReadAt, CreatedAt: n.CreatedAt})
+	}
+	return out, nil
+}
+func (s *DemandServiceImpl) ListNotificationsAfter(ctx context.Context, userID, afterID uint) ([]service.NotificationOutput, error) {
+	var rows []model.Notification
+	if err := s.db.WithContext(ctx).Where("user_id = ? AND id > ?", userID, afterID).Order("id asc").Limit(100).Find(&rows).Error; err != nil {
 		return nil, service.Internal(err)
 	}
 	out := make([]service.NotificationOutput, 0, len(rows))
@@ -431,21 +727,6 @@ func (s *DemandServiceImpl) ListForOffice(ctx context.Context, officeID uint, fi
 	return result, nil
 }
 
-func (s *DemandServiceImpl) UpdateStatus(ctx context.Context, demandID, officeID uint, input service.UpdateDemandStatusInput) (*service.DemandOutput, error) {
-	if !isValidDemandStatus(input.Status) {
-		return nil, service.InvalidInput("invalid demand status")
-	}
-	demand, err := s.demandRepo.UpdateStatus(ctx, demandID, officeID, input.Status)
-	if err != nil {
-		var dbErr *repository.DBError
-		if errors.As(err, &dbErr) && dbErr.Code == repository.DBErrorNotFound {
-			return nil, service.NotFound("demand is not assigned to this office")
-		}
-		return nil, service.Internal(err)
-	}
-	return demandToOutput(demand), nil
-}
-
 func (s *DemandServiceImpl) FindByID(ctx context.Context, id uint) (*service.DemandOutput, error) {
 	demand, err := s.demandRepo.FindByID(ctx, id)
 	if err != nil {
@@ -533,7 +814,7 @@ func demandToOutput(demand *entity.Demand) *service.DemandOutput {
 		CommentCount: demand.CommentCount,
 		CreatedAt:    demand.CreatedAt,
 		UpdatedAt:    demand.UpdatedAt,
-		Latitude:     demand.Latitude, Longitude: demand.Longitude, Images: demand.Images, DirectedOfficeID: demand.DirectedOfficeID, ResponsibleOfficeID: demand.ResponsibleOfficeID, ConfirmationDueAt: demand.ConfirmationDueAt,
+		Latitude:     demand.Latitude, Longitude: demand.Longitude, Images: normalizedImages(demand.Images), DirectedOfficeID: demand.DirectedOfficeID, ResponsibleOfficeID: demand.ResponsibleOfficeID, ConfirmationDueAt: demand.ConfirmationDueAt,
 	}
 }
 

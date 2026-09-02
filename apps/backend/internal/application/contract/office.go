@@ -19,6 +19,7 @@ type OfficeDirectoryItem struct {
 }
 type PublicOfficeOutput struct {
 	OfficeID       uint                         `json:"office_id"`
+	Slug           string                       `json:"slug"`
 	CouncillorName string                       `json:"councillor_name"`
 	Party          string                       `json:"party"`
 	ImageURL       string                       `json:"image_url"`
@@ -62,6 +63,7 @@ type CreateOfficeOutput struct {
 
 type UpdateOfficeInput struct {
 	CouncillorID   uint
+	Party          string                       `json:"party" binding:"required,min=2,max=80"`
 	Description    string                       `json:"description" binding:"max=1500"`
 	City           string                       `json:"city" binding:"required,min=2,max=120"`
 	State          string                       `json:"state" binding:"required,len=2"`
@@ -72,6 +74,8 @@ type UpdateOfficeInput struct {
 type UpdateOfficeOutput struct {
 	OfficeID       uint                         `json:"office_id"`
 	CouncillorID   uint                         `json:"councillor_id"`
+	Slug           string                       `json:"slug"`
+	Party          string                       `json:"party"`
 	Description    string                       `json:"description"`
 	City           string                       `json:"city"`
 	State          string                       `json:"state"`
@@ -86,7 +90,7 @@ type OfficeService interface {
 	ResolveOfficeID(context.Context, uint, entity.UserRole) (uint, error)
 	ListDirectory(context.Context, string, string) ([]OfficeDirectoryItem, error)
 	SearchPublic(context.Context, string, string, string) ([]PublicOfficeOutput, error)
-	FindPublic(context.Context, uint) (*PublicOfficeOutput, error)
+	FindPublic(context.Context, string) (*PublicOfficeOutput, error)
 	FindManaged(context.Context, uint, entity.UserRole) (*ManagedOfficeOutput, error)
 	ListMemberRequests(context.Context, uint) ([]OfficeMemberRequestOutput, error)
 	CancelMemberRequest(context.Context, uint, uint) error

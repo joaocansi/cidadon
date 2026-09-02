@@ -20,16 +20,16 @@ import { apiGetOffice, type OfficeContact, type PublicOffice } from "@/lib/api";
 import { apiErrorMessage } from "@/lib/forms";
 
 export default function OfficeProfilePage() {
-  const params = useParams<{ id: string }>();
+  const params = useParams<{ slug: string }>();
   const [office, setOffice] = useState<PublicOffice | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void apiGetOffice(params.id).then((result) => {
+    void apiGetOffice(params.slug).then((result) => {
       if (result.ok && result.data) setOffice(result.data);
       else setError(apiErrorMessage(result.error, "Gabinete não encontrado."));
     });
-  }, [params.id]);
+  }, [params.slug]);
 
   const channels = office
     ? [...office.contacts, ...office.social_networks].sort((a, b) => a.position - b.position)
@@ -41,7 +41,7 @@ export default function OfficeProfilePage() {
       subtitle={office ? `Representação parlamentar em ${office.city}/${office.state}.` : undefined}
     >
       <Link
-        href="/offices"
+        href="/gabinetes"
         className="text-lime-deep hover:text-pine mb-5 inline-flex items-center gap-2 text-sm font-semibold"
       >
         <ArrowLeftIcon className="size-4" />
